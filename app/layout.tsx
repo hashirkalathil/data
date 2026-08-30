@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Travel Data Management",
-  description: "Enterprise Travel & Candidate Management Platform",
+  title: "Data Manage",
+  description: "Data Manage",
 };
 
 export default async function RootLayout({
@@ -29,7 +29,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className="h-full">
       <head>
-        <meta name="apple-mobile-web-app-title" content="Travel Data" />
+        <meta name="apple-mobile-web-app-title" content="Data Manage" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-50 text-slate-900 font-sans min-h-full selection:bg-indigo-100 selection:text-indigo-900`}

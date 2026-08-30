@@ -60,7 +60,7 @@ export function TopHeader({ onOpenMobile, user }: TopHeaderProps) {
       };
     }
     return {
-      title: 'Travel Data Management',
+      title: 'Data Manage',
       badge: 'Protected',
       badgeColor: 'bg-slate-50 text-slate-600 border-slate-200',
     };

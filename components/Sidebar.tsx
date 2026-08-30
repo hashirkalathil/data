@@ -88,14 +88,9 @@ export function Sidebar({
             <Compass className="h-5 w-5" />
           </div>
           {(!collapsed || mobileOpen) && (
-            <div className="flex flex-col min-w-0 transition-opacity duration-200">
-              <span className="font-extrabold text-slate-900 text-base tracking-tight truncate">
-                Data<span className="text-indigo-600">Manage</span>
-              </span>
-              <span className="text-[10px] text-slate-400 tracking-wider uppercase font-semibold">
-                Candidate Hub
-              </span>
-            </div>
+            <span className="font-extrabold text-slate-900 text-base tracking-tight truncate transition-opacity duration-200">
+              Data <span className="text-indigo-600">Manage</span>
+            </span>
           )}
         </Link>
 
