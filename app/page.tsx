@@ -1,70 +1,21 @@
 'use client';
 
-import { Suspense, useEffect, useState, useMemo } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { DataTable } from '@/components/DataTable';
-import { CandidateDrawer } from '@/components/CandidateDrawer';
-import { ColumnVisibilityModal } from '@/components/ColumnVisibilityModal';
 import Link from 'next/link';
 import { ColumnDef } from '@tanstack/react-table';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Edit3, FileText } from 'lucide-react';
 
+// We don't know the exact schema, so we'll infer columns dynamically or use generic
+// Ideally we'd scan the first row to determine keys.
 type DataRow = Record<string, any>;
 
 function DataPage() {
   const searchParams = useSearchParams();
   const [data, setData] = useState<DataRow[]>([]);
-  const [headers, setHeaders] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [meta, setMeta] = useState({ totalPages: 1, page: 1, total: 0 });
-
-  // Drawer & Modals state
-  const [selectedCandidate, setSelectedCandidate] = useState<DataRow | null>(null);
-  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
-  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
-  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
-
-  // Load preferences from localStorage
-  useEffect(() => {
-    try {
-      const savedHidden = localStorage.getItem('table_hidden_columns');
-      if (savedHidden) {
-        setHiddenColumns(JSON.parse(savedHidden));
-      }
-      const savedDensity = localStorage.getItem('table_density');
-      if (savedDensity === 'compact' || savedDensity === 'comfortable') {
-        setDensity(savedDensity);
-      }
-    } catch (e) {
-      console.warn('Could not read table preferences from localStorage');
-    }
-  }, []);
-
-  const handleToggleColumn = (col: string) => {
-    setHiddenColumns((prev) => {
-      const next = prev.includes(col)
-        ? prev.filter((c) => c !== col)
-        : [...prev, col];
-      localStorage.setItem('table_hidden_columns', JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const handleResetColumns = () => {
-    setHiddenColumns([]);
-    localStorage.removeItem('table_hidden_columns');
-  };
-
-  const handleShowAllColumns = () => {
-    setHiddenColumns([]);
-    localStorage.setItem('table_hidden_columns', JSON.stringify([]));
-  };
-
-  const handleToggleDensity = () => {
-    const next = density === 'comfortable' ? 'compact' : 'comfortable';
-    setDensity(next);
-    localStorage.setItem('table_density', next);
-  };
+  const [meta, setMeta] = useState({ totalPages: 1, page: 1 });
+  const [columns, setColumns] = useState<ColumnDef<DataRow>[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -76,15 +27,72 @@ function DataPage() {
 
         if (result.data) {
           setData(result.data);
-          setMeta({
-            totalPages: result.meta?.totalPages || 1,
-            page: result.meta?.page || 1,
-            total: result.meta?.total || result.data.length,
-          });
+          setMeta(result.meta);
 
-          const rawHeaders =
-            result.headers || (result.data.length > 0 ? Object.keys(result.data[0]) : []);
-          setHeaders(rawHeaders);
+          // Generate columns from data keys if data exists
+          // Note: This assumes all rows have similar keys or first row resembles the schema
+          // Generate columns from headers if available, or fallback to data keys
+          if (columns.length === 0) {
+            const keys = result.headers || (result.data.length > 0 ? Object.keys(result.data[0]) : []);
+
+            if (keys.length > 0) {
+              const cols = keys.map((key: string) => {
+                const lowerKey = key.toLowerCase();
+                const isImage =
+                  lowerKey.includes('photo upload') ||
+                  lowerKey.includes('passport copy front') ||
+                  lowerKey.includes('passport copy back') ||
+                  lowerKey.includes('photo (passport size)') ||
+                  lowerKey.includes('passport photo (front)') ||
+                  lowerKey.includes('passport photo (back)') ||
+                  lowerKey.includes('aadhar image') ||
+                  lowerKey.includes('pancard image') ||
+                  lowerKey.includes('bank pasbook') ||
+                  lowerKey.includes('medical documents');
+
+                return {
+                  accessorFn: (row: DataRow) => row[key],
+                  id: key,
+                  header: key,
+                  cell: ({ getValue }: any) => {
+                    const val = getValue();
+                    if (isImage && val && typeof val === 'string' && val.startsWith('http')) {
+                      return (
+                        <div className="h-16 w-16 relative overflow-hidden rounded-md border border-gray-200">
+                          <img
+                            src={val}
+                            alt={key}
+                            className="object-cover w-full h-full hover:scale-110 transition-transform duration-200 cursor-zoom-in"
+                            onClick={() => window.open(val, '_blank')}
+                          />
+                        </div>
+                      );
+                    }
+                    return val;
+                  }
+                };
+              });
+
+              // Add Edit Column
+              cols.push({
+                accessorFn: (row: any) => row['Sl No.'], // Dummy accessor to satisfy type
+                id: 'actions',
+                header: 'Actions',
+                cell: ({ row }: any) => {
+                  const slNo = row.original['Sl No.'] || row.original['Sl No'];
+                  return (
+                    <Link href={`/edit?id=${slNo}`} className="text-indigo-600 hover:text-indigo-900 transition-colors p-2 rounded-full hover:bg-slate-100 block w-fit">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                      </svg>
+                    </Link>
+                  );
+                }
+              });
+
+              setColumns(cols);
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -96,222 +104,42 @@ function DataPage() {
     fetchData();
   }, [searchParams]);
 
-  // Generate TanStack Columns dynamically from headers
-  const columns = useMemo<ColumnDef<DataRow>[]>(() => {
-    if (!headers.length) return [];
-
-    const visibleHeaders = headers.filter((h) => !hiddenColumns.includes(h));
-
-    const cols: ColumnDef<DataRow>[] = visibleHeaders.map((key) => {
-      const lowerKey = key.toLowerCase();
-      const isImage =
-        lowerKey.includes('photo upload') ||
-        lowerKey.includes('passport copy front') ||
-        lowerKey.includes('passport copy back') ||
-        lowerKey.includes('photo (passport size)') ||
-        lowerKey.includes('passport photo (front)') ||
-        lowerKey.includes('passport photo (back)') ||
-        lowerKey.includes('aadhar image') ||
-        lowerKey.includes('pancard image') ||
-        lowerKey.includes('bank pasbook') ||
-        lowerKey.includes('medical documents');
-
-      const isMedical = lowerKey.includes('medical status') || lowerKey.includes('fitness');
-      const isTicket = lowerKey.includes('ticket status');
-      const isPassport = lowerKey.includes('passport no');
-
-      return {
-        accessorFn: (row: DataRow) => row[key],
-        id: key,
-        header: key,
-        cell: ({ getValue, row }: any) => {
-          const val = getValue();
-
-          // Image / PDF thumbnail cell
-          if (isImage && val && typeof val === 'string' && val.startsWith('http')) {
-            const isPdf = val.toLowerCase().endsWith('.pdf') || val.includes('.pdf');
-            if (isPdf) {
-              return (
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(val, '_blank');
-                  }}
-                  className="h-8 w-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 hover:bg-rose-100 cursor-pointer transition-colors shadow-xs"
-                  title="View PDF"
-                >
-                  <FileText className="h-4 w-4" />
-                </div>
-              );
-            }
-
-            return (
-              <div
-                className="h-9 w-9 relative overflow-hidden rounded-lg border border-slate-200 shadow-xs bg-slate-100 shrink-0 group/img"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedCandidate(row.original);
-                }}
-              >
-                <img
-                  src={val}
-                  alt={key}
-                  className="object-cover w-full h-full group-hover/img:scale-110 transition-transform duration-200 cursor-pointer"
-                />
-              </div>
-            );
-          }
-
-          // Medical Status badge
-          if (isMedical && val) {
-            const isFit =
-              String(val).toLowerCase().includes('fit') &&
-              !String(val).toLowerCase().includes('unfit');
-            const isUnfit = String(val).toLowerCase().includes('unfit');
-
-            return (
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                  isFit
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : isUnfit
-                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    isFit ? 'bg-emerald-500' : isUnfit ? 'bg-rose-500' : 'bg-amber-500'
-                  }`}
-                />
-                {String(val)}
-              </span>
-            );
-          }
-
-          // Ticket status badge
-          if (isTicket && val) {
-            const isBooked =
-              String(val).toLowerCase().includes('booked') ||
-              String(val).toLowerCase().includes('issued');
-            return (
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold ${
-                  isBooked
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                    : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {String(val)}
-              </span>
-            );
-          }
-
-          // Passport font mono
-          if (isPassport && val) {
-            return (
-              <span className="font-mono font-medium text-slate-800">{String(val)}</span>
-            );
-          }
-
-          if (val === null || val === undefined || val === '') {
-            return <span className="text-slate-300">—</span>;
-          }
-
-          return <span className="truncate block">{String(val)}</span>;
-        },
-      };
-    });
-
-    // Pinned Actions Column
-    cols.push({
-      id: 'actions',
-      header: 'Actions',
-      cell: ({ row }: any) => {
-        const slNo = row.original['Sl No.'] || row.original['Sl No'];
-        return (
-          <div
-            className="flex items-center justify-end gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* View Details Drawer button */}
-            <button
-              onClick={() => setSelectedCandidate(row.original)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors"
-              title="View Candidate Details"
-            >
-              <Eye className="h-4 w-4" />
-            </button>
-
-            {/* Edit Candidate link */}
-            <Link
-              href={`/edit?id=${slNo}`}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors"
-              title="Edit Candidate"
-            >
-              <Edit3 className="h-4 w-4" />
-            </Link>
-          </div>
-        );
-      },
-    });
-
-    return cols;
-  }, [headers, hiddenColumns]);
-
   return (
-    <div className="space-y-4">
-      {/* Upgraded Data Table */}
-      <DataTable
-        columns={columns}
-        data={data}
-        rawHeaders={headers}
-        pageCount={meta.totalPages}
-        totalRecords={meta.total}
-        isLoading={isLoading}
-        onRowClick={(row) => setSelectedCandidate(row)}
-        onOpenColumnModal={() => setIsColumnModalOpen(true)}
-        hiddenColumnsCount={hiddenColumns.length}
-        density={density}
-        onToggleDensity={handleToggleDensity}
-      />
+    <main className="min-h-screen bg-white relative selection:bg-indigo-50 selection:text-indigo-900 font-sans text-slate-900">
+      <div className="relative bg-white z-10 w-full max-w-[1500px] mx-auto px-6 py-6 sm:py-10 lg:px-8">
+        <header className="flex flex-col sm:flex-row sm:items-end gap-6 pb-8 border-b border-gray-100">
+          <Link
+            href="/add"
+            className="ml-auto group relative inline-flex items-center justify-end px-4 py-2 text-sm font-semibold text-white transition-all duration-200 bg-slate-900 rounded-full hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900"
+          >
+            <span className="mr-2 text-md">+</span> Add New Entry
+            <div className="absolute inset-0 rounded-full ring-2 ring-white/20 group-hover:ring-white/40 transition-all"></div>
+          </Link>
+        </header>
 
-      {/* Candidate Detail Slide-Over Drawer */}
-      <CandidateDrawer
-        isOpen={!!selectedCandidate}
-        onClose={() => setSelectedCandidate(null)}
-        candidate={selectedCandidate}
-      />
 
-      {/* Column Customization Modal */}
-      <ColumnVisibilityModal
-        isOpen={isColumnModalOpen}
-        onClose={() => setIsColumnModalOpen(false)}
-        allColumns={headers}
-        hiddenColumns={hiddenColumns}
-        onToggleColumn={handleToggleColumn}
-        onResetColumns={handleResetColumns}
-        onShowAllColumns={handleShowAllColumns}
-        density={density}
-        onChangeDensity={(d) => {
-          setDensity(d);
-          localStorage.setItem('table_density', d);
-        }}
-      />
-    </div>
+        <section className="bg-white/60 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-slate-900/5 p-1">
+          <div className="bg-white rounded-[1.25rem] overflow-hidden">
+            <DataTable
+              columns={columns}
+              data={data}
+              pageCount={meta.totalPages}
+              isLoading={isLoading}
+            />
+          </div>
+        </section>
+
+        <footer className="mt-16 text-center text-sm text-slate-400">
+          &copy; {new Date().getFullYear()} Travel Data Management. Secure & Private.
+        </footer>
+      </div>
+    </main>
   );
 }
 
 export default function Page() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-[50vh] flex flex-col items-center justify-center space-y-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-          <span className="text-sm font-medium text-slate-500">Loading Dashboard...</span>
-        </div>
-      }
-    >
+    <Suspense fallback={<div>Loading...</div>}>
       <DataPage />
     </Suspense>
   );

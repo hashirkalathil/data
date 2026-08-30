@@ -54,31 +54,6 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Global Sorting
-        const sortBy = searchParams.get('sortBy');
-        const sortOrder = searchParams.get('sortOrder') || 'asc'; // 'asc' or 'desc'
-
-        if (sortBy) {
-            filteredData = [...filteredData].sort((a: any, b: any) => {
-                const valA = a[sortBy] ?? '';
-                const valB = b[sortBy] ?? '';
-
-                // Handle numeric sorting (e.g. Sl No, amounts)
-                const numA = Number(valA);
-                const numB = Number(valB);
-                if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
-                    return sortOrder === 'desc' ? numB - numA : numA - numB;
-                }
-
-                // Handle string sorting case-insensitively with natural sort
-                const comp = String(valA).localeCompare(String(valB), undefined, {
-                    numeric: true,
-                    sensitivity: 'base',
-                });
-                return sortOrder === 'desc' ? -comp : comp;
-            });
-        }
-
         // Pagination
         const total = filteredData.length;
         const startIndex = (page - 1) * limit;
