@@ -29,8 +29,8 @@ interface CandidateFormProps {
 }
 
 const STEPS = [
-  { id: 1, label: 'Personal Details', desc: 'Basic info & address', icon: User },
-  { id: 2, label: 'Passport & Identity', desc: 'Passport, Aadhar & PAN', icon: ShieldCheck },
+  { id: 1, label: 'Passport & Identity', desc: 'Name, Passport, Expiry & Gov IDs', icon: ShieldCheck },
+  { id: 2, label: 'Personal & Contact', desc: 'Family & address details', icon: User },
   { id: 3, label: 'Travel & Visa', desc: 'Medical, visa & flight', icon: Plane },
   { id: 4, label: 'Documents & Photos', desc: 'Uploads & verifications', icon: FolderCheck },
   { id: 5, label: 'Finance & Review', desc: 'Payments & final check', icon: CreditCard },
@@ -336,6 +336,20 @@ export function CandidateForm({ mode, id }: CandidateFormProps) {
     }
   };
 
+  // Helper to prioritize fields in Step 1 so Candidate Name -> Passport No -> Expiry Date appear first
+  const getFieldPriority = (col: string): number => {
+    const c = col.toLowerCase();
+    if (c.includes('candidate name') || c === 'name' || c.includes('full name')) return 1;
+    if (c.includes('passport no')) return 2;
+    if (c.includes('expiry') || c.includes('exp date')) return 3;
+    if (c.includes('issue') && c.includes('date')) return 4;
+    if (c.includes('place of issue')) return 5;
+    if (c.includes('ecr')) return 6;
+    if (c.includes('aadhar')) return 7;
+    if (c.includes('pan')) return 8;
+    return 10;
+  };
+
   // Helper to categorize which column belongs to which step
   const getStepForColumn = (col: string): number => {
     const c = col.toLowerCase();
@@ -343,9 +357,19 @@ export function CandidateForm({ mode, id }: CandidateFormProps) {
     if (c.includes('sl no') || c.includes('photo') || c.includes('image') || c.includes('pasbook') || c.includes('medical doc')) {
       return 0; // Handled separately
     }
-    // Step 2: Passport & Gov ID
-    if (c.includes('passport') || c.includes('aadhar') || c.includes('pan')) {
-      return 2;
+    // Step 1: Candidate Name & Passport & Gov ID (Name collected first with Passport)
+    if (
+      c.includes('candidate name') || 
+      c === 'name' || 
+      c.includes('full name') || 
+      c.includes('passport') || 
+      c.includes('expiry') || 
+      c.includes('place of issue') || 
+      c.includes('ecr') || 
+      c.includes('aadhar') || 
+      c.includes('pan')
+    ) {
+      return 1;
     }
     // Step 3: Visa, Travel, Medical fitness
     if (c.includes('visa') || c.includes('country') || c.includes('trade') || c.includes('flight') || c.includes('pnr') || c.includes('sector') || c.includes('ticket') || c.includes('medical center') || c.includes('medical status') || c.includes('fitness')) {
@@ -355,8 +379,8 @@ export function CandidateForm({ mode, id }: CandidateFormProps) {
     if (c.includes('amount') || c.includes('advance') || c.includes('balance') || c.includes('payment') || c.includes('agent') || c.includes('collected') || c.includes('remark')) {
       return 5;
     }
-    // Default: Step 1 (Personal & Contact)
-    return 1;
+    // Default: Step 2 (Personal & Contact details)
+    return 2;
   };
 
   if (isLoading) {
@@ -448,23 +472,63 @@ export function CandidateForm({ mode, id }: CandidateFormProps) {
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 sm:p-8">
           
-          {/* Step 1: Personal Details */}
+          {/* Step 1: Passport & Candidate Identity */}
           {currentStep === 1 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-3">
-                <h2 className="text-base font-bold text-slate-900">Step 1: Personal & Contact Information</h2>
-                <p className="text-xs text-slate-500">Enter applicant identity, family background, and address</p>
+                <h2 className="text-base font-bold text-slate-900">Step 1: Passport & Identification Details</h2>
+                <p className="text-xs text-slate-500">Collect candidate name, passport number, expiry date, and government IDs</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {columns
+                  .map((col, idx) => ({ col, idx, priority: getFieldPriority(col) }))
+                  .filter((item) => getStepForColumn(item.col) === 1)
+                  .sort((a, b) => a.priority - b.priority)
+                  .map(({ col, idx }) => {
+                    const fieldKey = `field_${idx}`;
+                    const isDate = col.toLowerCase().includes('date') || col.toLowerCase().includes('expiry');
+                    const isPassport = col.toLowerCase().includes('passport no');
+                    const isName = col.toLowerCase().includes('candidate name') || col.toLowerCase() === 'name';
+
+                    return (
+                      <div key={col} className={`space-y-1.5 ${isName ? 'sm:col-span-2' : ''}`}>
+                        <label className="block text-xs font-semibold text-slate-700">
+                          {col} {(isPassport || isName) && <span className="text-rose-500">*</span>}
+                        </label>
+                        <input
+                          type={isDate ? 'date' : 'text'}
+                          {...register(fieldKey, { required: isPassport || isName })}
+                          placeholder={`Enter ${col}`}
+                          className={`w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                            isPassport ? 'font-mono uppercase font-bold tracking-wider' : ''
+                          } ${isName ? 'font-semibold text-slate-900' : ''}`}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Personal & Contact Details */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              <div className="border-b border-slate-100 pb-3">
+                <h2 className="text-base font-bold text-slate-900">Step 2: Personal & Contact Information</h2>
+                <p className="text-xs text-slate-500">Family background, contact details, and address</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {columns.map((col, idx) => {
-                  if (getStepForColumn(col) !== 1) return null;
+                  if (getStepForColumn(col) !== 2) return null;
                   const fieldKey = `field_${idx}`;
                   const isDate = col.toLowerCase().includes('dob') || col.toLowerCase().includes('date');
                   const isSelectSex = col.toLowerCase() === 'sex' || col.toLowerCase() === 'gender';
+                  const isAddress = col.toLowerCase().includes('address');
 
                   return (
-                    <div key={col} className="space-y-1.5">
+                    <div key={col} className={`space-y-1.5 ${isAddress ? 'sm:col-span-2' : ''}`}>
                       <label className="block text-xs font-semibold text-slate-700">
                         {col}
                       </label>
@@ -486,41 +550,6 @@ export function CandidateForm({ mode, id }: CandidateFormProps) {
                           className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400"
                         />
                       )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Passport & Identification */}
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-3">
-                <h2 className="text-base font-bold text-slate-900">Step 2: Passport & Identification Details</h2>
-                <p className="text-xs text-slate-500">Passport numbers and government identification credentials</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {columns.map((col, idx) => {
-                  if (getStepForColumn(col) !== 2) return null;
-                  const fieldKey = `field_${idx}`;
-                  const isDate = col.toLowerCase().includes('date');
-                  const isPassport = col.toLowerCase().includes('passport no');
-
-                  return (
-                    <div key={col} className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        {col} {isPassport && <span className="text-rose-500">*</span>}
-                      </label>
-                      <input
-                        type={isDate ? 'date' : 'text'}
-                        {...register(fieldKey, { required: isPassport })}
-                        placeholder={`Enter ${col}`}
-                        className={`w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
-                          isPassport ? 'font-mono uppercase font-bold tracking-wider' : ''
-                        }`}
-                      />
                     </div>
                   );
                 })}

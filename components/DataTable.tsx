@@ -27,6 +27,7 @@ import {
   Square,
   MinusSquare,
   RotateCcw,
+  Filter,
 } from 'lucide-react';
 import { exportToCsv } from '@/lib/exportCsv';
 
@@ -42,6 +43,11 @@ interface DataTableProps<TData, TValue> {
   hiddenColumnsCount?: number;
   density: 'comfortable' | 'compact';
   onToggleDensity: () => void;
+  filterOptions?: {
+    countries: string[];
+    trades: string[];
+    agents: string[];
+  };
 }
 
 export function DataTable<TData, TValue>({
@@ -56,6 +62,7 @@ export function DataTable<TData, TValue>({
   hiddenColumnsCount = 0,
   density,
   onToggleDensity,
+  filterOptions,
 }: DataTableProps<TData, TValue>) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -90,6 +97,33 @@ export function DataTable<TData, TValue>({
       console.warn('Could not read column widths from localStorage');
     }
   }, []);
+
+  // Quick Filter Popover State
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const selectedCountry = searchParams.get('country') || '';
+  const selectedTrade = searchParams.get('trade') || '';
+  const selectedAgent = searchParams.get('agent') || '';
+  const activeFilterCount = (selectedCountry ? 1 : 0) + (selectedTrade ? 1 : 0) + (selectedAgent ? 1 : 0);
+
+  const handleFilterChange = (key: 'country' | 'trade' | 'agent', value: string) => {
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    if (value) {
+      current.set(key, value);
+    } else {
+      current.delete(key);
+    }
+    current.set('page', '1');
+    router.push(`${window.location.pathname}?${current.toString()}`);
+  };
+
+  const handleClearAllFilters = () => {
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    current.delete('country');
+    current.delete('trade');
+    current.delete('agent');
+    current.set('page', '1');
+    router.push(`${window.location.pathname}?${current.toString()}`);
+  };
 
   // Debounced search
   useEffect(() => {
@@ -316,87 +350,199 @@ export function DataTable<TData, TValue>({
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
       
       {/* Top Toolbar */}
-      <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white">
+      <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5 bg-white">
         
-        {/* Search Input */}
-        <div className="relative w-full sm:max-w-md">
+        {/* Search Input with Clear Button and Shortcut hint */}
+        <div className="relative w-full md:max-w-md">
           <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search by passport, name, trade, etc..."
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            className="w-full pl-10 pr-9 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-slate-900 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white transition-all shadow-xs"
+            className="w-full pl-10 pr-16 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-slate-900 text-xs sm:text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
           />
-          {searchValue && (
-            <button
-              onClick={() => setSearchValue('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {searchValue ? (
+              <button
+                type="button"
+                onClick={() => setSearchValue('')}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-white text-[10px] font-mono border border-slate-200 text-slate-400 shadow-2xs">
+                Ctrl K
+              </kbd>
+            )}
+          </div>
         </div>
 
         {/* Action Tools */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           
-          {/* Column Customizer */}
-          {onOpenColumnModal && (
+          {/* Quick Filter Popover */}
+          <div className="relative">
             <button
-              onClick={onOpenColumnModal}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors"
-              title="Customize visible columns"
+              type="button"
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${
+                activeFilterCount > 0
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700 shadow-indigo-100'
+                  : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+              }`}
             >
-              <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" />
-              <span>Columns</span>
-              {hiddenColumnsCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-bold text-[10px]">
-                  -{hiddenColumnsCount}
+              <Filter className={`h-3.5 w-3.5 ${activeFilterCount > 0 ? 'text-indigo-600' : 'text-slate-500'}`} />
+              <span>Filter</span>
+              {activeFilterCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
+                  {activeFilterCount}
                 </span>
               )}
             </button>
-          )}
 
-          {/* Density Toggle */}
-          <button
-            onClick={onToggleDensity}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors"
-            title={`Toggle density: currently ${density}`}
-          >
-            <Rows className="h-3.5 w-3.5 text-slate-500" />
-            <span className="capitalize">{density}</span>
-          </button>
+            {/* Filter Popover Dropdown */}
+            {isFilterOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsFilterOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200/80 p-4 z-50 space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-bold text-slate-900">Filter Records</span>
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllFilters}
+                        className="text-[11px] font-semibold text-rose-600 hover:underline"
+                      >
+                        Reset all
+                      </button>
+                    )}
+                  </div>
 
-          {/* Reset Column Widths to Auto-fit */}
-          {Object.keys(columnWidths).length > 0 && (
+                  {/* Country Filter */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-500 block">Country</label>
+                    <select
+                      value={selectedCountry}
+                      onChange={(e) => handleFilterChange('country', e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    >
+                      <option value="">All Countries</option>
+                      {filterOptions?.countries?.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Trade Filter */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-500 block">Profession / Trade</label>
+                    <select
+                      value={selectedTrade}
+                      onChange={(e) => handleFilterChange('trade', e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    >
+                      <option value="">All Trades</option>
+                      {filterOptions?.trades?.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Agent Filter */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-500 block">Agent / Source</label>
+                    <select
+                      value={selectedAgent}
+                      onChange={(e) => handleFilterChange('agent', e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    >
+                      <option value="">All Agents</option>
+                      {filterOptions?.agents?.map((a) => (
+                        <option key={a} value={a}>{a}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Segmented View Control (Columns & Density + Auto-fit) */}
+          <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-0.5 shadow-2xs">
+            {onOpenColumnModal && (
+              <button
+                type="button"
+                onClick={onOpenColumnModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+                title="Customize visible columns"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" />
+                <span>Columns</span>
+                {hiddenColumnsCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-600 font-bold text-[10px]">
+                    -{hiddenColumnsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            <div className="h-4 w-px bg-slate-200 mx-0.5" />
+
             <button
-              onClick={() => {
-                setColumnWidths({});
-                localStorage.removeItem('table_col_widths');
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-indigo-600 hover:text-indigo-700 text-xs font-semibold shadow-xs transition-colors"
-              title="Reset all column widths to default auto-fit"
+              type="button"
+              onClick={onToggleDensity}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+              title={`Toggle density: currently ${density}`}
             >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>Auto-fit</span>
+              <Rows className="h-3.5 w-3.5 text-slate-500" />
+              <span className="capitalize">{density}</span>
             </button>
-          )}
 
-          {/* Export All */}
+            {Object.keys(columnWidths).length > 0 && (
+              <>
+                <div className="h-4 w-px bg-slate-200 mx-0.5" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setColumnWidths({});
+                    localStorage.removeItem('table_col_widths');
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/60 rounded-lg text-xs font-semibold transition-colors"
+                  title="Reset all column widths to default auto-fit"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Auto-fit</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Export CSV Action Button */}
           <button
+            type="button"
             onClick={handleExportAll}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs hover:shadow-xs transition-all"
             title="Export full table data to CSV"
           >
             <Download className="h-3.5 w-3.5 text-slate-500" />
             <span>Export CSV</span>
           </button>
 
-          {/* Total entries indicator */}
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-xs font-medium text-slate-500">
-            <Database className="h-3.5 w-3.5 text-slate-400" />
-            <span>{totalRecords} Candidates</span>
+          {/* Total Candidates Live Status Badge */}
+          <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs font-medium text-slate-600 shadow-2xs">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span>
+              <span className="font-bold text-slate-900">{totalRecords}</span> Candidates
+            </span>
           </div>
 
         </div>
@@ -417,16 +563,16 @@ export function DataTable<TData, TValue>({
         className="overflow-x-auto min-h-[460px] max-h-[calc(100vh-270px)]"
       >
         <table className="w-full text-left border-collapse table-auto">
-          <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200">
+          <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200/80">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 
                 {/* Selection Checkbox Header */}
-                <th className="w-12 px-3 py-3 text-center sticky left-0 bg-slate-50/95 z-30 shadow-[1px_0_0_rgba(226,232,240,1)]">
+                <th className="w-12 px-3 py-3 text-center sticky left-0 bg-slate-50/95 z-30 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] border-r border-slate-200/60">
                   <button
                     type="button"
                     onClick={handleToggleSelectAll}
-                    className="p-1 rounded text-slate-400 hover:text-indigo-600 transition-colors"
+                    className="p-1 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
                     title={isAllPageSelected ? 'Deselect all' : 'Select all on page'}
                   >
                     {isAllPageSelected ? (
@@ -453,15 +599,17 @@ export function DataTable<TData, TValue>({
                           ? { width: `${customWidth}px`, minWidth: `${customWidth}px` }
                           : { minWidth: 'max-content' }
                       }
-                      className={`px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap select-none relative group ${
+                      className={`px-4 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap select-none relative group transition-colors ${
+                        isSorted ? 'bg-indigo-50/70 text-indigo-700' : 'text-slate-500'
+                      } ${
                         density === 'compact' ? 'py-2.5' : 'py-3.5'
                       } ${
                         isSlNo
-                          ? 'sticky left-12 bg-slate-50/95 z-30 shadow-[1px_0_0_rgba(226,232,240,1)]'
+                          ? 'sticky left-12 bg-slate-50/95 z-30 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] border-r border-slate-200/60'
                           : ''
                       } ${
                         isActions
-                          ? 'sticky right-0 bg-slate-50/95 z-30 shadow-[-1px_0_0_rgba(226,232,240,1)] text-right'
+                          ? 'sticky right-0 bg-slate-50/95 z-30 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] text-right border-l border-slate-200/60'
                           : ''
                       }`}
                     >
@@ -541,12 +689,14 @@ export function DataTable<TData, TValue>({
                       if (onRowClick) onRowClick(row.original);
                     }}
                     className={`group transition-colors duration-150 cursor-pointer select-none ${
-                      isSelected ? 'bg-indigo-50/60' : 'hover:bg-indigo-50/30'
+                      isSelected ? 'bg-indigo-50/70' : 'hover:bg-slate-50/80'
                     }`}
                   >
                     {/* Row Selection Checkbox */}
                     <td
-                      className="w-12 px-3 py-2.5 text-center sticky left-0 bg-white group-hover:bg-slate-50 z-10 shadow-[1px_0_0_rgba(241,245,249,1)]"
+                      className={`w-12 px-3 py-2.5 text-center sticky left-0 z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] border-r border-slate-100 ${
+                        isSelected ? 'bg-indigo-50/90' : 'bg-white group-hover:bg-slate-50'
+                      }`}
                       onClick={(e) => handleToggleSelectRow(rowId, e)}
                     >
                       <button
@@ -574,11 +724,15 @@ export function DataTable<TData, TValue>({
                             density === 'compact' ? 'py-2' : 'py-3'
                           } ${
                             isSlNo
-                              ? 'sticky left-12 bg-white group-hover:bg-slate-50 font-bold text-slate-900 shadow-[1px_0_0_rgba(241,245,249,1)] z-10'
+                              ? `sticky left-12 font-bold text-slate-900 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] border-r border-slate-100 z-10 ${
+                                  isSelected ? 'bg-indigo-50/90' : 'bg-white group-hover:bg-slate-50'
+                                }`
                               : ''
                           } ${
                             isActions
-                              ? 'sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-1px_0_0_rgba(241,245,249,1)] text-right z-10'
+                              ? `sticky right-0 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] border-l border-slate-100 text-right z-10 ${
+                                  isSelected ? 'bg-indigo-50/90' : 'bg-white group-hover:bg-slate-50'
+                                }`
                               : ''
                           }`}
                         >

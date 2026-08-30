@@ -54,6 +54,54 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // Extract available filter options from dataset
+        const countriesSet = new Set<string>();
+        const tradesSet = new Set<string>();
+        const agentsSet = new Set<string>();
+
+        data.forEach((row: any) => {
+            const country = row['Country Applied For'] || row['Country Applied'] || row['Country'];
+            if (country && typeof country === 'string' && country.trim()) {
+                countriesSet.add(country.trim());
+            }
+
+            const trade = row['Trade'] || row['Trade / Job Category'] || row['Profession'];
+            if (trade && typeof trade === 'string' && trade.trim()) {
+                tradesSet.add(trade.trim());
+            }
+
+            const agent = row['Agent Name'] || row['Sub Agent Name'] || row['Collected by'] || row['Agent'];
+            if (agent && typeof agent === 'string' && agent.trim()) {
+                agentsSet.add(agent.trim());
+            }
+        });
+
+        // Specific Field Filters
+        const countryFilter = searchParams.get('country')?.toLowerCase();
+        const tradeFilter = searchParams.get('trade')?.toLowerCase();
+        const agentFilter = searchParams.get('agent')?.toLowerCase();
+
+        if (countryFilter) {
+            filteredData = filteredData.filter((row: any) => {
+                const country = String(row['Country Applied For'] || row['Country Applied'] || row['Country'] || '').toLowerCase();
+                return country === countryFilter || country.includes(countryFilter);
+            });
+        }
+
+        if (tradeFilter) {
+            filteredData = filteredData.filter((row: any) => {
+                const trade = String(row['Trade'] || row['Trade / Job Category'] || row['Profession'] || '').toLowerCase();
+                return trade === tradeFilter || trade.includes(tradeFilter);
+            });
+        }
+
+        if (agentFilter) {
+            filteredData = filteredData.filter((row: any) => {
+                const agent = String(row['Agent Name'] || row['Sub Agent Name'] || row['Collected by'] || row['Agent'] || '').toLowerCase();
+                return agent === agentFilter || agent.includes(agentFilter);
+            });
+        }
+
         // Global Sorting
         const sortBy = searchParams.get('sortBy');
         const sortOrder = searchParams.get('sortOrder') || 'asc'; // 'asc' or 'desc'
@@ -92,6 +140,11 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             data: paginatedData,
             headers,
+            filterOptions: {
+                countries: Array.from(countriesSet).sort(),
+                trades: Array.from(tradesSet).sort(),
+                agents: Array.from(agentsSet).sort(),
+            },
             meta: {
                 total,
                 page,

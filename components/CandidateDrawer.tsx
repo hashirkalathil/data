@@ -13,9 +13,7 @@ import {
   Plane, 
   CreditCard, 
   FolderCheck,
-  CheckCircle2,
-  Clock,
-  AlertCircle
+  CheckCircle2
 } from 'lucide-react';
 
 interface CandidateDrawerProps {
@@ -29,10 +27,17 @@ export function CandidateDrawer({
   onClose,
   candidate,
 }: CandidateDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'passport' | 'travel' | 'documents' | 'finance'>('overview');
+  const [activeTab, setActiveTab] = useState<'passport' | 'overview' | 'travel' | 'documents' | 'finance'>('passport');
   const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   if (!isOpen || !candidate) return null;
+
+  // Helper to check if a value is truly present and meaningful
+  const hasValue = (val: any): boolean => {
+    if (val === null || val === undefined) return false;
+    const str = String(val).trim();
+    return str !== '' && str !== '—' && str !== '-' && str !== 'undefined' && str !== 'null' && str !== 'N/A';
+  };
 
   // Helper to find field value case-insensitively with partial matching
   const getField = (patterns: string[]): string => {
@@ -41,13 +46,13 @@ export function CandidateDrawer({
       // First exact lower-case match
       for (const key of Object.keys(candidate)) {
         if (key.toLowerCase() === lowerPat) {
-          return candidate[key] ? String(candidate[key]) : '';
+          return candidate[key] ? String(candidate[key]).trim() : '';
         }
       }
       // Then includes match
       for (const key of Object.keys(candidate)) {
         if (key.toLowerCase().includes(lowerPat)) {
-          return candidate[key] ? String(candidate[key]) : '';
+          return candidate[key] ? String(candidate[key]).trim() : '';
         }
       }
     }
@@ -55,16 +60,15 @@ export function CandidateDrawer({
   };
 
   const slNo = getField(['Sl No.', 'Sl No', 'slno', 'id']);
-  const candidateName = getField(['Candidate Name', 'Full Name', 'Name']) || 'Unnamed Candidate';
+  const candidateName = getField(['Candidate Name', 'Full Name', 'Name']) || 'Candidate Details';
   const passportNo = getField(['Passport No. ( in capital letters)', 'Passport Number', 'Passport No']);
   const country = getField(['Country Applied', 'Country Applied For', 'Country']);
   const trade = getField(['Trade', 'Profession', 'Job Category']);
   const mobile = getField(['Mobile Number', 'Contact Number', 'Phone', 'Mobile']);
   const medicalStatus = getField(['Medical Status', 'Fitness Status', 'Medical']);
-  const visaStatus = getField(['Visa Status', 'Visa Type', 'Visa Number']);
   const flightDate = getField(['Flight Date', 'Date of Departure']);
   
-  // Document links
+  // Document links (only those that actually exist and have valid URLs)
   const docFields = [
     { label: 'Passport Photo', value: getField(['photo (passport size)', 'photo upload', 'person photo']) },
     { label: 'Passport Front Copy', value: getField(['passport photo (front)', 'passport copy front', 'passport front']) },
@@ -77,6 +81,107 @@ export function CandidateDrawer({
   ].filter(doc => doc.value && typeof doc.value === 'string' && doc.value.startsWith('http'));
 
   const avatarUrl = getField(['photo (passport size)', 'photo upload']);
+
+  // Tab 1: Personal & Contact Fields
+  const personalFields = [
+    { label: "Father's Name", value: getField(["Father's Name", 'Father Name']) },
+    { label: "Mother's Name", value: getField(["Mother's Name", 'Mother Name']) },
+    { label: "Date of Birth", value: getField(['DOB', 'Date of Birth']) },
+    { label: "Age", value: getField(['Age']) },
+    { label: "Gender", value: getField(['Gender']) },
+    { label: "Religion", value: getField(['Religion']) },
+    { label: "Marital Status", value: getField(['Marital Status']) },
+    { label: "Education / Qualification", value: getField(['Education', 'Qualification']) },
+  ];
+
+  const contactFields = [
+    { label: "Primary Mobile", value: mobile },
+    { label: "Alternate Mobile", value: getField(['Alternate Mobile Number', 'Alt Mobile']) },
+    { label: "Address", value: getField(['Address', 'Present Address']), fullWidth: true },
+    { label: "District", value: getField(['District']) },
+    { label: "State", value: getField(['State']) },
+    { label: "Pin Code", value: getField(['Pin Code', 'Pincode']) },
+  ];
+
+  // Tab 1: Passport & Identity Fields
+  const passportFields = [
+    { label: "Passport Number", value: passportNo, isMono: true },
+    { label: "Date of Expiry", value: getField(['Date of Expiry', 'Passport Expiry Date', 'Passport Expiry', 'Expiry Date']) },
+    { label: "Date of Issue", value: getField(['Date of Issue', 'Passport Issue Date', 'Issue Date']) },
+    { label: "Place of Issue", value: getField(['Place of Issue', 'Issue Place']) },
+    { label: "ECR / ECNR", value: getField(['ECR / ECNR', 'ECR/ECNR', 'ECR Status']) },
+  ];
+
+  const govtIdFields = [
+    { label: "Aadhar Card No.", value: getField(['Aadhar Number', 'Aadhar No']), isMono: true },
+    { label: "PAN Card No.", value: getField(['PAN Number', 'Pan No', 'PAN']), isMono: true },
+  ];
+
+  // Tab 3: Travel & Visa Fields
+  const visaFields = [
+    { label: "Country Applied For", value: country },
+    { label: "Job Trade / Category", value: trade },
+    { label: "Visa Type", value: getField(['Visa Type']) },
+    { label: "Visa Number", value: getField(['Visa Number', 'Visa No']), isMono: true },
+    { label: "Visa Stamping Date", value: getField(['Visa Stamping Date']) },
+    { label: "Visa Expiry Date", value: getField(['Visa Expiry Date']) },
+  ];
+
+  const medicalFlightFields = [
+    { label: "Medical Center", value: getField(['Medical Center Name', 'Medical Center']) },
+    { label: "Medical Fitness", value: medicalStatus },
+    { label: "Flight Departure Date", value: flightDate },
+    { label: "Sector / Route", value: getField(['Sector / Destination', 'Flight Sector', 'Sector']) },
+    { label: "PNR Number", value: getField(['PNR Number', 'PNR']), isMono: true },
+    { label: "Ticket Status", value: getField(['Ticket Status']) },
+  ];
+
+  // Tab 4: Finance & Agent Fields
+  const paymentFields = [
+    { label: "Total Agreed Amount", value: getField(['Agreed Amount', 'Total Amount']) },
+    { label: "Advance Paid", value: getField(['Advance Paid', 'Advance']) },
+    { label: "Balance Amount", value: getField(['Balance Amount', 'Balance']) },
+    { label: "Payment Mode", value: getField(['Payment Mode', 'Mode of Payment']) },
+  ];
+
+  const agentFields = [
+    { label: "Collected By", value: getField(['Collected by', 'Collected By']) },
+    { label: "Agent Name", value: getField(['Agent Name', 'Agent']) },
+    { label: "Sub Agent", value: getField(['Sub Agent Name', 'Sub Agent']) },
+    { label: "Remarks / Notes", value: getField(['Remarks', 'Notes']), fullWidth: true },
+  ];
+
+  // Any other non-empty custom columns from sheet that weren't captured above
+  const standardLowerKeys = new Set([
+    'sl no.', 'sl no', 'slno', 'id', 'candidate name', 'name', 'full name',
+    'passport no. ( in capital letters)', 'passport number', 'passport no',
+    'country applied', 'country applied for', 'country', 'trade', 'profession', 'job category',
+    'mobile number', 'contact number', 'phone', 'mobile',
+    'medical status', 'fitness status', 'medical', 'visa status', 'visa type', 'visa number',
+    'flight date', 'date of departure',
+    'photo (passport size)', 'photo upload', 'person photo',
+    'passport photo (front)', 'passport copy front', 'passport front',
+    'passport photo (back)', 'passport copy back', 'passport back',
+    'aadhar image (front)', 'aadhar front', 'aadhar image',
+    'aadhar image (back)', 'aadhar back',
+    'pancard image', 'pan card image', 'pancard',
+    'bank pasbook', 'bank passbook',
+    'medical documents', 'medical report',
+    "father's name", 'father name', "mother's name", 'mother name',
+    'dob', 'date of birth', 'age', 'gender', 'religion', 'marital status', 'education', 'qualification',
+    'alternate mobile number', 'alt mobile', 'address', 'present address', 'district', 'state', 'pin code', 'pincode',
+    'place of issue', 'date of issue', 'date of expiry', 'ecr / ecnr', 'ecr/ecnr',
+    'aadhar number', 'aadhar no', 'pan number', 'pan no', 'pan',
+    'visa stamping date', 'visa expiry date',
+    'medical center name', 'medical center',
+    'sector / destination', 'flight sector', 'sector', 'pnr number', 'pnr', 'ticket status',
+    'agreed amount', 'total amount', 'advance paid', 'advance', 'balance amount', 'balance', 'payment mode', 'mode of payment',
+    'collected by', 'agent name', 'agent', 'sub agent name', 'sub agent', 'remarks', 'notes'
+  ]);
+
+  const otherFields = Object.entries(candidate)
+    .filter(([k, v]) => !standardLowerKeys.has(k.toLowerCase().trim()) && hasValue(v) && !String(v).startsWith('http'))
+    .map(([k, v]) => ({ label: k, value: String(v).trim() }));
 
   const handlePrint = () => {
     window.print();
@@ -123,9 +228,15 @@ export function CandidateDrawer({
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-500 font-mono mt-0.5">
-                    {passportNo ? `Passport: ${passportNo}` : 'No Passport Specified'}
-                  </p>
+                  {passportNo ? (
+                    <p className="text-sm text-slate-500 font-mono mt-0.5">
+                      Passport: <span className="font-semibold text-slate-800">{passportNo}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-400 font-mono mt-0.5 italic">
+                      No Passport Specified
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mt-2 flex-wrap text-xs">
                     {country && (
                       <span className="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 font-medium border border-indigo-100">
@@ -152,13 +263,15 @@ export function CandidateDrawer({
 
               {/* Action buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <Link
-                  href={`/edit?id=${slNo}`}
-                  className="p-2 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors"
-                  title="Edit Candidate"
-                >
-                  <Edit3 className="h-4 w-4" />
-                </Link>
+                {slNo && (
+                  <Link
+                    href={`/edit?id=${slNo}`}
+                    className="p-2 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors"
+                    title="Edit Candidate"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                  </Link>
+                )}
                 <button
                   onClick={handlePrint}
                   className="p-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors"
@@ -179,8 +292,8 @@ export function CandidateDrawer({
             {/* Navigation Tabs */}
             <div className="flex items-center gap-1 mt-6 border-b border-slate-200 overflow-x-auto text-xs font-medium scrollbar-none">
               {[
-                { id: 'overview', label: 'Overview', icon: User },
-                { id: 'passport', label: 'Identity', icon: ShieldCheck },
+                { id: 'passport', label: 'Passport & Identity', icon: ShieldCheck },
+                { id: 'overview', label: 'Personal & Contact', icon: User },
                 { id: 'travel', label: 'Visa & Travel', icon: Plane },
                 { id: 'documents', label: `Documents (${docFields.length})`, icon: FolderCheck },
                 { id: 'finance', label: 'Finance & Agent', icon: CreditCard },
@@ -198,7 +311,7 @@ export function CandidateDrawer({
                     }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
-                    {tab.label}
+                    <span>{tab.label}</span>
                   </button>
                 );
               })}
@@ -207,55 +320,18 @@ export function CandidateDrawer({
 
           {/* Drawer Body */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {activeTab === 'overview' && (
-              <div className="space-y-6">
-                <section>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                    Personal Details
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Full Name" value={candidateName} />
-                    <DetailItem label="Father's Name" value={getField(["Father's Name", 'Father Name'])} />
-                    <DetailItem label="Mother's Name" value={getField(["Mother's Name", 'Mother Name'])} />
-                    <DetailItem label="Date of Birth" value={getField(['DOB', 'Date of Birth'])} />
-                    <DetailItem label="Age" value={getField(['Age'])} />
-                    <DetailItem label="Gender" value={getField(['Gender'])} />
-                    <DetailItem label="Religion" value={getField(['Religion'])} />
-                    <DetailItem label="Marital Status" value={getField(['Marital Status'])} />
-                    <DetailItem label="Education" value={getField(['Education', 'Qualification'])} />
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                    Contact & Address
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Primary Mobile" value={mobile} />
-                    <DetailItem label="Alternate Mobile" value={getField(['Alternate Mobile Number', 'Alt Mobile'])} />
-                    <div className="col-span-2">
-                      <DetailItem label="Address" value={getField(['Address', 'Present Address'])} />
-                    </div>
-                    <DetailItem label="District" value={getField(['District'])} />
-                    <DetailItem label="State" value={getField(['State'])} />
-                    <DetailItem label="Pin Code" value={getField(['Pin Code', 'Pincode'])} />
-                  </div>
-                </section>
-              </div>
-            )}
-
+            
+            {/* Tab: Passport & Identity (First Section) */}
             {activeTab === 'passport' && (
               <div className="space-y-6">
                 <section>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Passport Information
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Passport Number" value={passportNo} isMono />
-                    <DetailItem label="Place of Issue" value={getField(['Place of Issue'])} />
-                    <DetailItem label="Date of Issue" value={getField(['Date of Issue'])} />
-                    <DetailItem label="Date of Expiry" value={getField(['Date of Expiry'])} />
-                    <DetailItem label="ECR / ECNR" value={getField(['ECR / ECNR', 'ECR/ECNR'])} />
+                  <div className="grid grid-cols-2 gap-3">
+                    {passportFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} isMono={f.isMono} />
+                    ))}
                   </div>
                 </section>
 
@@ -263,27 +339,53 @@ export function CandidateDrawer({
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Government Identification
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Aadhar Card No." value={getField(['Aadhar Number', 'Aadhar No'])} isMono />
-                    <DetailItem label="PAN Card No." value={getField(['PAN Number', 'Pan No', 'PAN'])} isMono />
+                  <div className="grid grid-cols-2 gap-3">
+                    {govtIdFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} isMono={f.isMono} />
+                    ))}
                   </div>
                 </section>
               </div>
             )}
 
+            {/* Tab: Personal & Contact */}
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                <section>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                    Personal Details
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {personalFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} />
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                    Contact & Address
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {contactFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} fullWidth={f.fullWidth} />
+                    ))}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* Tab: Travel & Visa */}
             {activeTab === 'travel' && (
               <div className="space-y-6">
                 <section>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Visa & Application
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Country Applied For" value={country} />
-                    <DetailItem label="Job Trade / Category" value={trade} />
-                    <DetailItem label="Visa Type" value={getField(['Visa Type'])} />
-                    <DetailItem label="Visa Number" value={getField(['Visa Number', 'Visa No'])} isMono />
-                    <DetailItem label="Visa Stamping Date" value={getField(['Visa Stamping Date'])} />
-                    <DetailItem label="Visa Expiry Date" value={getField(['Visa Expiry Date'])} />
+                  <div className="grid grid-cols-2 gap-3">
+                    {visaFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} isMono={f.isMono} />
+                    ))}
                   </div>
                 </section>
 
@@ -291,22 +393,20 @@ export function CandidateDrawer({
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Medical & Flight Status
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Medical Center" value={getField(['Medical Center Name', 'Medical Center'])} />
-                    <DetailItem label="Medical Fitness" value={medicalStatus} />
-                    <DetailItem label="Flight Departure Date" value={flightDate} />
-                    <DetailItem label="Sector / Route" value={getField(['Sector / Destination', 'Flight Sector', 'Sector'])} />
-                    <DetailItem label="PNR Number" value={getField(['PNR Number', 'PNR'])} isMono />
-                    <DetailItem label="Ticket Status" value={getField(['Ticket Status'])} />
+                  <div className="grid grid-cols-2 gap-3">
+                    {medicalFlightFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} isMono={f.isMono} />
+                    ))}
                   </div>
                 </section>
               </div>
             )}
 
+            {/* Tab: Documents */}
             {activeTab === 'documents' && (
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                  Uploaded Verification Documents
+                  Uploaded Verification Documents ({docFields.length})
                 </h3>
                 {docFields.length === 0 ? (
                   <div className="text-center py-12 bg-slate-50 rounded-2xl border border-slate-200">
@@ -360,17 +460,17 @@ export function CandidateDrawer({
               </div>
             )}
 
+            {/* Tab: Finance & Agent */}
             {activeTab === 'finance' && (
               <div className="space-y-6">
                 <section>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Payment & Balance
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Total Agreed Amount" value={getField(['Agreed Amount', 'Total Amount'])} />
-                    <DetailItem label="Advance Paid" value={getField(['Advance Paid', 'Advance'])} />
-                    <DetailItem label="Balance Amount" value={getField(['Balance Amount', 'Balance'])} />
-                    <DetailItem label="Payment Mode" value={getField(['Payment Mode', 'Mode of Payment'])} />
+                  <div className="grid grid-cols-2 gap-3">
+                    {paymentFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} />
+                    ))}
                   </div>
                 </section>
 
@@ -378,17 +478,28 @@ export function CandidateDrawer({
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Agent & Collection Details
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                    <DetailItem label="Collected By" value={getField(['Collected by', 'Collected By'])} />
-                    <DetailItem label="Agent Name" value={getField(['Agent Name', 'Agent'])} />
-                    <DetailItem label="Sub Agent" value={getField(['Sub Agent Name', 'Sub Agent'])} />
-                    <div className="col-span-2">
-                      <DetailItem label="Remarks / Notes" value={getField(['Remarks', 'Notes'])} />
-                    </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {agentFields.map((f, i) => (
+                      <DetailItem key={i} label={f.label} value={f.value} fullWidth={f.fullWidth} />
+                    ))}
                   </div>
                 </section>
+
+                {otherFields.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                      Other Recorded Information
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {otherFields.map((f, i) => (
+                        <DetailItem key={i} label={f.label} value={f.value} />
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
+
           </div>
 
           {/* Footer actions */}
@@ -403,12 +514,14 @@ export function CandidateDrawer({
               >
                 Close
               </button>
-              <Link
-                href={`/edit?id=${slNo}`}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-sm"
-              >
-                <Edit3 className="h-3.5 w-3.5" /> Edit Candidate
-              </Link>
+              {slNo && (
+                <Link
+                  href={`/edit?id=${slNo}`}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-sm"
+                >
+                  <Edit3 className="h-3.5 w-3.5" /> Edit Candidate
+                </Link>
+              )}
             </div>
           </div>
 
@@ -444,17 +557,26 @@ function DetailItem({
   label,
   value,
   isMono = false,
+  fullWidth = false,
 }: {
   label: string;
   value?: string;
   isMono?: boolean;
+  fullWidth?: boolean;
 }) {
+  const trimmed = value && typeof value === 'string' ? value.trim() : '';
+  const isEmpty = !trimmed || trimmed === '—' || trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === 'N/A';
+
   return (
-    <div>
-      <span className="block text-[11px] font-medium text-slate-400 mb-0.5">{label}</span>
-      <span className={`block text-sm text-slate-800 font-medium truncate ${isMono ? 'font-mono' : ''}`}>
-        {value || '—'}
-      </span>
+    <div className={`p-3 rounded-xl bg-slate-50/80 border border-slate-200/70 shadow-2xs ${fullWidth ? 'col-span-2' : ''}`}>
+      <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</span>
+      {isEmpty ? (
+        <span className="block text-xs sm:text-sm text-slate-300 font-mono italic">—</span>
+      ) : (
+        <span className={`block text-xs sm:text-sm text-slate-800 font-semibold break-words ${isMono ? 'font-mono' : ''}`}>
+          {trimmed}
+        </span>
+      )}
     </div>
   );
 }

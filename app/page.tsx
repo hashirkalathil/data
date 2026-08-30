@@ -17,6 +17,11 @@ function DataPage() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [meta, setMeta] = useState({ totalPages: 1, page: 1, total: 0 });
+  const [filterOptions, setFilterOptions] = useState<{
+    countries: string[];
+    trades: string[];
+    agents: string[];
+  }>({ countries: [], trades: [], agents: [] });
 
   // Drawer & Modals state
   const [selectedCandidate, setSelectedCandidate] = useState<DataRow | null>(null);
@@ -82,6 +87,10 @@ function DataPage() {
             total: result.meta?.total || result.data.length,
           });
 
+          if (result.filterOptions) {
+            setFilterOptions(result.filterOptions);
+          }
+
           const rawHeaders =
             result.headers || (result.data.length > 0 ? Object.keys(result.data[0]) : []);
           setHeaders(rawHeaders);
@@ -119,6 +128,9 @@ function DataPage() {
       const isMedical = lowerKey.includes('medical status') || lowerKey.includes('fitness');
       const isTicket = lowerKey.includes('ticket status');
       const isPassport = lowerKey.includes('passport no');
+      const isName = lowerKey === 'candidate name' || lowerKey === 'name' || lowerKey === 'full name';
+      const isSlNo = lowerKey === 'sl no.' || lowerKey === 'sl no';
+      const isAmount = lowerKey.includes('amount') || lowerKey.includes('advance') || lowerKey.includes('balance');
 
       return {
         accessorFn: (row: DataRow) => row[key],
@@ -126,6 +138,34 @@ function DataPage() {
         header: key,
         cell: ({ getValue, row }: any) => {
           const val = getValue();
+
+          // Serial Number badge
+          if (isSlNo && val) {
+            return (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100/90 text-slate-700 font-mono text-xs font-bold border border-slate-200/60">
+                #{String(val)}
+              </span>
+            );
+          }
+
+          // Candidate Name with mini avatar
+          if (isName && val) {
+            const avatarUrl = row.original['photo (passport size)'] || row.original['photo upload'];
+            const initial = (String(val)[0] || 'C').toUpperCase();
+
+            return (
+              <div className="flex items-center gap-2.5">
+                <div className="h-7 w-7 rounded-full overflow-hidden bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 text-xs font-bold shadow-2xs">
+                  {avatarUrl && typeof avatarUrl === 'string' && avatarUrl.startsWith('http') ? (
+                    <img src={avatarUrl} alt={String(val)} className="h-full w-full object-cover" />
+                  ) : (
+                    <span>{initial}</span>
+                  )}
+                </div>
+                <span className="font-semibold text-slate-900 truncate">{String(val)}</span>
+              </div>
+            );
+          }
 
           // Image / PDF thumbnail cell
           if (isImage && val && typeof val === 'string' && val.startsWith('http')) {
@@ -137,7 +177,7 @@ function DataPage() {
                     e.stopPropagation();
                     window.open(val, '_blank');
                   }}
-                  className="h-8 w-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 hover:bg-rose-100 cursor-pointer transition-colors shadow-xs"
+                  className="h-8 w-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 hover:bg-rose-100 cursor-pointer transition-colors shadow-2xs"
                   title="View PDF"
                 >
                   <FileText className="h-4 w-4" />
@@ -147,7 +187,7 @@ function DataPage() {
 
             return (
               <div
-                className="h-9 w-9 relative overflow-hidden rounded-lg border border-slate-200 shadow-xs bg-slate-100 shrink-0 group/img"
+                className="h-9 w-9 relative overflow-hidden rounded-xl border border-slate-200/90 shadow-2xs bg-slate-100 shrink-0 group/img"
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedCandidate(row.original);
@@ -171,12 +211,12 @@ function DataPage() {
 
             return (
               <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                   isFit
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70 shadow-2xs'
                     : isUnfit
-                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200/70 shadow-2xs'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200/70 shadow-2xs'
                 }`}
               >
                 <span
@@ -196,9 +236,9 @@ function DataPage() {
               String(val).toLowerCase().includes('issued');
             return (
               <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold ${
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-semibold ${
                   isBooked
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/70'
                     : 'bg-slate-100 text-slate-700'
                 }`}
               >
@@ -210,12 +250,23 @@ function DataPage() {
           // Passport font mono
           if (isPassport && val) {
             return (
-              <span className="font-mono font-medium text-slate-800">{String(val)}</span>
+              <span className="font-mono font-semibold tracking-wider text-slate-800 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 text-xs">
+                {String(val)}
+              </span>
+            );
+          }
+
+          // Amounts
+          if (isAmount && val && !isNaN(Number(val))) {
+            return (
+              <span className="font-mono font-semibold text-slate-800 text-xs">
+                ₹{Number(val).toLocaleString('en-IN')}
+              </span>
             );
           }
 
           if (val === null || val === undefined || val === '') {
-            return <span className="text-slate-300">—</span>;
+            return <span className="text-slate-300 font-mono text-xs">—</span>;
           }
 
           return <span className="truncate block">{String(val)}</span>;
@@ -231,25 +282,25 @@ function DataPage() {
         const slNo = row.original['Sl No.'] || row.original['Sl No'];
         return (
           <div
-            className="flex items-center justify-end gap-1"
+            className="flex items-center justify-end gap-1.5"
             onClick={(e) => e.stopPropagation()}
           >
             {/* View Details Drawer button */}
             <button
               onClick={() => setSelectedCandidate(row.original)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 transition-colors shadow-2xs"
               title="View Candidate Details"
             >
-              <Eye className="h-4 w-4" />
+              <Eye className="h-3.5 w-3.5" />
             </button>
 
             {/* Edit Candidate link */}
             <Link
               href={`/edit?id=${slNo}`}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors shadow-2xs"
               title="Edit Candidate"
             >
-              <Edit3 className="h-4 w-4" />
+              <Edit3 className="h-3.5 w-3.5" />
             </Link>
           </div>
         );
@@ -274,6 +325,7 @@ function DataPage() {
         hiddenColumnsCount={hiddenColumns.length}
         density={density}
         onToggleDensity={handleToggleDensity}
+        filterOptions={filterOptions}
       />
 
       {/* Candidate Detail Slide-Over Drawer */}
