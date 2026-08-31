@@ -6,17 +6,26 @@ import { CandidateDrawer } from '@/components/CandidateDrawer';
 import { ColumnVisibilityModal } from '@/components/ColumnVisibilityModal';
 import Link from 'next/link';
 import { ColumnDef } from '@tanstack/react-table';
-import { useSearchParams } from 'next/navigation';
-import { Eye, Edit3, FileText } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Eye, EyeOff, Edit3, FileText, SlidersHorizontal, Clock } from 'lucide-react';
 
 type DataRow = Record<string, any>;
 
 function DataPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<DataRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [meta, setMeta] = useState({ totalPages: 1, page: 1, total: 0 });
+  const [meta, setMeta] = useState({ 
+    totalPages: 1, 
+    page: 1, 
+    total: 0,
+    allTotal: 0,
+    isFilteringOld: false,
+    hiddenCount: 0,
+    allowAdminViewAll: false,
+  });
   const [filterOptions, setFilterOptions] = useState<{
     countries: string[];
     trades: string[];
@@ -85,6 +94,10 @@ function DataPage() {
             totalPages: result.meta?.totalPages || 1,
             page: result.meta?.page || 1,
             total: result.meta?.total || result.data.length,
+            allTotal: result.meta?.allTotal || result.meta?.total || result.data.length,
+            isFilteringOld: !!result.meta?.isFilteringOld,
+            hiddenCount: result.meta?.hiddenCount || 0,
+            allowAdminViewAll: !!result.meta?.allowAdminViewAll,
           });
 
           if (result.filterOptions) {
@@ -131,6 +144,7 @@ function DataPage() {
       const isName = lowerKey === 'candidate name' || lowerKey === 'name' || lowerKey === 'full name';
       const isSlNo = lowerKey === 'sl no.' || lowerKey === 'sl no';
       const isAmount = lowerKey.includes('amount') || lowerKey.includes('advance') || lowerKey.includes('balance');
+      const isLastUpdated = lowerKey.includes('last updated') || lowerKey.includes('updated time');
 
       return {
         accessorFn: (row: DataRow) => row[key],
@@ -265,6 +279,16 @@ function DataPage() {
             );
           }
 
+          // Last Updated Time
+          if (isLastUpdated && val) {
+            return (
+              <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/70 whitespace-nowrap">
+                <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                {String(val)}
+              </span>
+            );
+          }
+
           if (val === null || val === undefined || val === '') {
             return <span className="text-slate-300 font-mono text-xs">—</span>;
           }
@@ -310,8 +334,85 @@ function DataPage() {
     return cols;
   }, [headers, hiddenColumns]);
 
+  const isViewingAll = searchParams.get('includeOld') === 'true';
+
+  const handleToggleIncludeOld = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (isViewingAll) {
+      params.delete('includeOld');
+    } else {
+      params.set('includeOld', 'true');
+    }
+    params.set('page', '1');
+    router.push(`/?${params.toString()}`);
+  };
+
   return (
     <div className="space-y-4">
+      {/* Old Data Filtering Notice / Toggle Banner */}
+      {meta.isFilteringOld && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-amber-50/90 border border-amber-200/80 rounded-2xl text-amber-900 shadow-2xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+            <span className="text-xs font-semibold">
+              Showing new candidates only &bull; <strong className="font-bold">{meta.hiddenCount}</strong> old records hidden by cutoff settings
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {meta.allowAdminViewAll && (
+              <button
+                type="button"
+                onClick={handleToggleIncludeOld}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100/60 border border-amber-200 text-xs font-bold text-amber-800 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                <span>Show All Records</span>
+              </button>
+            )}
+
+            <Link
+              href="/settings"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-700 hover:text-amber-900 hover:bg-amber-100/50 transition-colors"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span>Settings</span>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* When Admin is currently viewing all historical data */}
+      {isViewingAll && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl text-indigo-900 shadow-2xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
+            <span className="text-xs font-semibold">
+              Viewing all historical records &bull; Total: <strong className="font-bold">{meta.allTotal || meta.total}</strong> candidates
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleToggleIncludeOld}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+              <span>Hide Old Data</span>
+            </button>
+
+            <Link
+              href="/settings"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-indigo-700 hover:text-indigo-900 hover:bg-indigo-100/50 transition-colors"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span>Settings</span>
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Upgraded Data Table */}
       <DataTable
         columns={columns}

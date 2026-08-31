@@ -28,12 +28,47 @@ export async function getSheet() {
     return doc.sheetsByIndex[0]; // Default to the first sheet
 }
 
+/** Formats a readable timestamp for Google Sheets and UI */
+export function getFormattedTimestamp(): string {
+    const now = new Date();
+    return now.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kolkata',
+    });
+}
+
+/** Ensures 'Last Updated Time' header column exists in Google Sheets */
+export async function ensureLastUpdatedHeader(sheet: any) {
+    try {
+        await sheet.loadHeaderRow();
+        const headers = sheet.headerValues || [];
+        const hasHeader = headers.some((h: string) => 
+            h.toLowerCase() === 'last updated time' || 
+            h.toLowerCase() === 'last updated'
+        );
+        if (!hasHeader) {
+            const newHeaders = [...headers, 'Last Updated Time'];
+            if (newHeaders.length > sheet.columnCount) {
+                await sheet.updateGridProperties({ columnCount: newHeaders.length + 5 });
+            }
+            await sheet.setHeaderRow(newHeaders);
+        }
+    } catch (e) {
+        console.warn('[GoogleSheets] Note: Could not auto-modify header row:', e);
+    }
+}
+
 export async function addRow(row: Record<string, string | number | boolean>) {
     const sheet = await getSheet();
+    await ensureLastUpdatedHeader(sheet);
 
     // Auto-generate Sl No.
-    // We need to fetch existing rows to find the max Sl No.
-    // This is not the most efficient for huge sheets but works for typical use cases.
     const rows = await sheet.getRows();
     let maxSlNo = 0;
 
@@ -45,17 +80,19 @@ export async function addRow(row: Record<string, string | number | boolean>) {
     });
 
     row['Sl No.'] = maxSlNo + 1;
+    row['Last Updated Time'] = getFormattedTimestamp();
 
     await sheet.addRow(row);
 }
 
 export async function updateRow(slNo: string | number, updates: Record<string, any>) {
     const sheet = await getSheet();
+    await ensureLastUpdatedHeader(sheet);
+
     const rows = await sheet.getRows();
 
     const row = rows.find(r => {
         const val = r.get('Sl No.');
-        // Debug first few rows
         if (r.rowNumber < 5) console.log(`[GoogleSheets] Row ${r.rowNumber} Sl No:`, val);
         return String(val) === String(slNo);
     });
@@ -76,9 +113,11 @@ export async function updateRow(slNo: string | number, updates: Record<string, a
         }
     });
 
+    // Record Last Updated Time
+    row.set('Last Updated Time', getFormattedTimestamp());
+
     await row.save();
 }
-
 
 export async function getRows() {
     const sheet = await getSheet();
@@ -88,7 +127,7 @@ export async function getRows() {
 
 export async function getHeaders() {
     const sheet = await getSheet();
-    await sheet.loadHeaderRow(); // Ensure headers are loaded
+    await ensureLastUpdatedHeader(sheet);
     return sheet.headerValues;
 }
 
@@ -99,9 +138,6 @@ export async function getCredentials() {
     }
     const sheet = doc.sheetsByTitle['cred'];
     if (!sheet) {
-        // If cred sheet doesn't exist, maybe fallback or throw? 
-        // For now, assume it exists as per prompt.
-        // Or create it? No, prompt says "user credentials are on the sheets in a sheet called \"cred\""
         console.warn("Sheet 'cred' not found.");
         return [];
     }

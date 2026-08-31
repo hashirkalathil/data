@@ -11,8 +11,11 @@ export async function middleware(request: NextRequest) {
     // 2. Define public routes
     const isPublicRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/api/auth');
 
-    // 3. Redirect to /login if not authenticated and trying to access a protected route
+    // 3. Reject or redirect if unauthenticated
     if (!payload && !isPublicRoute) {
+        if (request.nextUrl.pathname.startsWith('/api/')) {
+            return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 });
+        }
         return NextResponse.redirect(new URL('/login', request.url));
     }
 

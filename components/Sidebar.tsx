@@ -15,9 +15,10 @@ import {
   Radio,
   X,
   Sparkles,
-  Shield
+  Shield,
+  Settings
 } from 'lucide-react';
-import { logout } from '@/app/actions/auth';
+import { LogoutModal } from './LogoutModal';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -39,6 +40,7 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Keyboard shortcut listener for Ctrl+K / Cmd+K
   useEffect(() => {
@@ -72,6 +74,11 @@ export function Sidebar({
       label: 'Dashboard',
       href: '/',
       icon: LayoutDashboard,
+    },
+    {
+      label: 'Settings',
+      href: '/settings',
+      icon: Settings,
     },
   ];
 
@@ -280,7 +287,7 @@ export function Sidebar({
           </div>
 
           <button
-            onClick={() => logout()}
+            onClick={() => setIsLogoutModalOpen(true)}
             className={`p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ${
               collapsed && !mobileOpen ? 'hidden' : 'block'
             }`}
@@ -322,6 +329,12 @@ export function Sidebar({
       >
         {sidebarContent}
       </aside>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+      />
     </>
   );
 }

@@ -13,7 +13,8 @@ import {
   Plane, 
   CreditCard, 
   FolderCheck,
-  CheckCircle2
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 
 interface CandidateDrawerProps {
@@ -67,6 +68,7 @@ export function CandidateDrawer({
   const mobile = getField(['Mobile Number', 'Contact Number', 'Phone', 'Mobile']);
   const medicalStatus = getField(['Medical Status', 'Fitness Status', 'Medical']);
   const flightDate = getField(['Flight Date', 'Date of Departure']);
+  const lastUpdated = getField(['Last Updated Time', 'Last Updated', 'Updated At', 'Last Modified']);
   
   // Document links (only those that actually exist and have valid URLs)
   const docFields = [
@@ -176,7 +178,8 @@ export function CandidateDrawer({
     'medical center name', 'medical center',
     'sector / destination', 'flight sector', 'sector', 'pnr number', 'pnr', 'ticket status',
     'agreed amount', 'total amount', 'advance paid', 'advance', 'balance amount', 'balance', 'payment mode', 'mode of payment',
-    'collected by', 'agent name', 'agent', 'sub agent name', 'sub agent', 'remarks', 'notes'
+    'collected by', 'agent name', 'agent', 'sub agent name', 'sub agent', 'remarks', 'notes',
+    'last updated time', 'last updated', 'updated at', 'last modified'
   ]);
 
   const otherFields = Object.entries(candidate)
@@ -255,6 +258,12 @@ export function CandidateDrawer({
                           : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}>
                         <CheckCircle2 className="h-3 w-3" /> {medicalStatus}
+                      </span>
+                    )}
+                    {lastUpdated && (
+                      <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 font-mono text-[11px] font-medium flex items-center gap-1 border border-slate-200" title="Last Updated Time">
+                        <Clock className="h-3 w-3 text-slate-400" />
+                        <span>{lastUpdated}</span>
                       </span>
                     )}
                   </div>

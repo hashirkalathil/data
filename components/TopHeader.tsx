@@ -14,7 +14,7 @@ import {
   Sparkles,
   UserCheck
 } from 'lucide-react';
-import { logout } from '@/app/actions/auth';
+import { LogoutModal } from './LogoutModal';
 
 interface TopHeaderProps {
   onOpenMobile: () => void;
@@ -28,6 +28,7 @@ export function TopHeader({ onOpenMobile, user }: TopHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -57,6 +58,13 @@ export function TopHeader({ onOpenMobile, user }: TopHeaderProps) {
         title: 'Modify Candidate',
         badge: 'Editing',
         badgeColor: 'bg-amber-50 text-amber-700 border-amber-200/60',
+      };
+    }
+    if (pathname.startsWith('/settings')) {
+      return {
+        title: 'Settings & Visibility',
+        badge: 'Configuration',
+        badgeColor: 'bg-violet-50 text-violet-700 border-violet-200/60',
       };
     }
     return {
@@ -146,23 +154,29 @@ export function TopHeader({ onOpenMobile, user }: TopHeaderProps) {
 
         {/* User Badge Pill */}
         <div className="flex items-center gap-2 pl-1 sm:pl-2">
-          <div className="flex items-center gap-2 py-1 px-1.5 rounded-xl hover:bg-slate-50 transition-colors">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white font-bold text-xs flex items-center justify-center ring-2 ring-indigo-500/10 shadow-xs shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsLogoutModalOpen(true)}
+            className="flex items-center gap-2 py-1 px-1.5 rounded-xl hover:bg-slate-100/80 transition-colors text-left cursor-pointer group"
+            title="Click to sign out"
+          >
+            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white font-bold text-xs flex items-center justify-center ring-2 ring-indigo-500/10 shadow-xs shrink-0 group-hover:ring-indigo-500/30 transition-all">
               {displayInitial}
             </div>
             <div className="hidden md:flex flex-col text-left leading-tight">
-              <span className="text-xs font-bold text-slate-800 truncate max-w-[110px]">
+              <span className="text-xs font-bold text-slate-800 truncate max-w-[110px] group-hover:text-indigo-600 transition-colors">
                 {displayName}
               </span>
               <span className="text-[10px] text-slate-400 truncate">
                 Admin
               </span>
             </div>
-          </div>
+          </button>
 
           <button
-            onClick={() => logout()}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 transition-colors"
+            type="button"
+            onClick={() => setIsLogoutModalOpen(true)}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 transition-colors cursor-pointer"
             title="Sign out"
             aria-label="Sign out"
           >
@@ -172,6 +186,11 @@ export function TopHeader({ onOpenMobile, user }: TopHeaderProps) {
 
       </div>
 
+      {/* Logout Confirmation Modal */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+      />
     </header>
   );
 }

@@ -3,15 +3,29 @@
 import { getCredentials } from '@/lib/googleSheets';
 import { encrypt, decrypt } from '@/lib/auth';
 import { setUserCache, clearUserCache } from '@/lib/cache';
-import { cookies } from 'next/headers';
+import { checkLoginRateLimit, recordFailedLoginAttempt, resetLoginRateLimit } from '@/lib/rateLimit';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 export async function login(prevState: any, formData: FormData) {
-    const username = formData.get('username') as string;
+    const username = (formData.get('username') as string || '').trim();
     const password = formData.get('password') as string;
 
     if (!username || !password) {
         return { error: 'Username and password are required' };
+    }
+
+    // Determine client identifier for rate limiting (IP + username)
+    const headersList = await headers();
+    const clientIp = headersList.get('x-forwarded-for')?.split(',')[0].trim() || headersList.get('x-real-ip') || 'unknown';
+    const rateLimitKey = `${clientIp}:${username.toLowerCase()}`;
+
+    // Check rate limit
+    const rateLimitStatus = checkLoginRateLimit(rateLimitKey);
+    if (!rateLimitStatus.allowed) {
+        return {
+            error: `Too many failed attempts. Please wait ${rateLimitStatus.lockoutMinutesLeft} minute(s) before trying again.`
+        };
     }
 
     try {
@@ -19,6 +33,8 @@ export async function login(prevState: any, formData: FormData) {
         const user = users.find((u: any) => u.username === username && u.password === password);
 
         if (user) {
+            // Reset rate limit on successful authentication
+            resetLoginRateLimit(rateLimitKey);
             // Create session
             const sessionData = {
                 name: user.Name,
@@ -41,7 +57,15 @@ export async function login(prevState: any, formData: FormData) {
 
             redirect('/');
         } else {
-            return { error: 'Invalid username or password' };
+            const failResult = recordFailedLoginAttempt(rateLimitKey);
+            if (failResult.lockedOut) {
+                return {
+                    error: `Too many failed attempts. Login temporarily locked for ${failResult.lockoutMinutes} minutes.`
+                };
+            }
+            return {
+                error: `Invalid username or password. (${failResult.remainingAttempts} attempt${failResult.remainingAttempts === 1 ? '' : 's'} remaining)`
+            };
         }
     } catch (err) {
         console.error('Login error:', err);

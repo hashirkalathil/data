@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, addRow } from '@/lib/googleSheets';
 import { getCache, setCache, clearCache } from '@/lib/cache';
+import { getSettings } from '@/lib/settings';
+import { getSession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
     try {
+        // Enforce Authentication
+        const session = await getSession();
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const searchParams = request.nextUrl.searchParams;
         const search = searchParams.get('search')?.toLowerCase() || '';
         const page = parseInt(searchParams.get('page') || '1');
@@ -21,6 +29,45 @@ export async function GET(request: NextRequest) {
 
         // Filter
         let filteredData = data;
+
+        // Retrieve settings for old data visibility
+        const settings = getSettings();
+        const includeOld = searchParams.get('includeOld') === 'true';
+        const totalBeforeOldFilter = data.length;
+        let hiddenCount = 0;
+
+        if (settings.hideOldData && !includeOld) {
+            filteredData = filteredData.filter((row: any) => {
+                let isHidden = false;
+                const sl = parseInt(row['Sl No.'] || row['Sl No'] || '0');
+
+                if (settings.cutoffMode === 'slNo' && settings.cutoffSlNo > 0) {
+                    if (sl < settings.cutoffSlNo) {
+                        isHidden = true;
+                    }
+                }
+
+                if (settings.cutoffMode === 'date' && settings.cutoffDate) {
+                    const dateVal = row['Created Date'] || row['Date'] || row['Entry Date'] || row['Submission Date'];
+                    if (dateVal && String(dateVal) < settings.cutoffDate) {
+                        isHidden = true;
+                    }
+                }
+
+                if (settings.respectArchivedColumn) {
+                    const archivedVal = String(row['Archived'] || row['archived'] || row['Status'] || '').toLowerCase().trim();
+                    if (archivedVal === 'true' || archivedVal === 'yes' || archivedVal === 'archived' || archivedVal === '1') {
+                        isHidden = true;
+                    }
+                }
+
+                if (isHidden) {
+                    hiddenCount++;
+                    return false;
+                }
+                return true;
+            });
+        }
 
         // Single ID fetch
         // Single ID fetch
@@ -147,9 +194,13 @@ export async function GET(request: NextRequest) {
             },
             meta: {
                 total,
+                allTotal: totalBeforeOldFilter,
                 page,
                 limit,
                 totalPages: Math.ceil(total / limit),
+                isFilteringOld: settings.hideOldData && !includeOld,
+                hiddenCount,
+                allowAdminViewAll: settings.allowAdminViewAll,
             },
         });
     } catch (error: any) {
@@ -160,6 +211,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
+        const session = await getSession();
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await request.json();
 
         // Basic validation could happen here or in the library
@@ -177,6 +233,11 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
     try {
+        const session = await getSession();
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await request.json();
         const { slNo, data } = body;
 

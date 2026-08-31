@@ -353,8 +353,16 @@ export function CandidateForm({ mode, id }: CandidateFormProps) {
   // Helper to categorize which column belongs to which step
   const getStepForColumn = (col: string): number => {
     const c = col.toLowerCase();
-    // Ignore Sl No and Image columns from text inputs
-    if (c.includes('sl no') || c.includes('photo') || c.includes('image') || c.includes('pasbook') || c.includes('medical doc')) {
+    // Ignore Sl No, Image columns, and system timestamp columns from text inputs
+    if (
+      c.includes('sl no') || 
+      c.includes('photo') || 
+      c.includes('image') || 
+      c.includes('pasbook') || 
+      c.includes('medical doc') ||
+      c.includes('last updated') ||
+      c.includes('updated time')
+    ) {
       return 0; // Handled separately
     }
     // Step 1: Candidate Name & Passport & Gov ID (Name collected first with Passport)

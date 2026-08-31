@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
+import { getSession } from '@/lib/auth';
 
 // Config
 cloudinary.config({
@@ -8,19 +9,53 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// Security Constraints
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB limit
+const ALLOWED_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+]);
+const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
+
 export async function POST(request: NextRequest) {
     try {
+        // 1. Enforce Authentication (Defense-in-depth)
+        const session = await getSession();
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 });
+        }
+
         const formData = await request.formData();
         const file = formData.get('file') as File;
-        const filename = formData.get('filename') as string || file.name;
-        const folderType = formData.get('folderType') as string || 'photo'; // 'photo' or 'copy'
+        const rawFilename = (formData.get('filename') as string || file?.name || '').trim();
+        const folderType = formData.get('folderType') as string || 'photo';
 
         if (!file) {
             return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
         }
 
-        // Cloudinary handles buffer uploads via stream or base64. 
-        // We'll use a Promise wrapper around upload_stream for cleaner async/await.
+        // 2. Validate File Size
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+            return NextResponse.json({ 
+                error: `File size exceeds the 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB` 
+            }, { status: 400 });
+        }
+
+        // 3. Validate MIME Type and Extension
+        const mimeType = (file.type || '').toLowerCase();
+        const extMatch = (file.name || '').match(/\.[^.]+$/);
+        const extension = extMatch ? extMatch[0].toLowerCase() : '';
+
+        if (!ALLOWED_MIME_TYPES.has(mimeType) || !ALLOWED_EXTENSIONS.has(extension)) {
+            return NextResponse.json({ 
+                error: 'Invalid file format. Only JPEG, PNG, WebP images and PDF documents are allowed.' 
+            }, { status: 400 });
+        }
+
+        // 4. Sanitize Filename (prevent directory traversal)
+        const safeFilename = rawFilename.replace(/[^a-zA-Z0-9._-]/g, '_');
 
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
@@ -33,20 +68,15 @@ export async function POST(request: NextRequest) {
         else if (folderType === 'passbook') folder = 'passports/passbook';
         else if (folderType === 'medical') folder = 'passports/medical';
 
-        // Check if PDF
-        const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
-
-        // Public ID handling:
-        // For PDFs, we generally want to treat them as 'raw' or keep the extension so they are served correctly.
-        // For Images, Cloudinary manages extension, so we strip it from public_id.
-        const publicId = isPdf ? filename : filename.replace(/\.[^/.]+$/, "");
+        const isPdf = extension === '.pdf' || mimeType === 'application/pdf';
+        const publicId = isPdf ? safeFilename : safeFilename.replace(/\.[^/.]+$/, "");
 
         const result: any = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
                     folder: folder,
                     public_id: publicId,
-                    resource_type: 'auto', // Auto allows PDF to be detected as raw/image
+                    resource_type: 'auto',
                     overwrite: true,
                 },
                 (error, result) => {
@@ -60,7 +90,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             fileId: result.public_id,
-            webViewLink: result.secure_url, // Keep key 'webViewLink' for frontend compatibility
+            webViewLink: result.secure_url,
         });
 
     } catch (error: any) {
@@ -71,6 +101,12 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
+        // Enforce Authentication
+        const session = await getSession();
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 });
+        }
+
         const body = await request.json();
         const { url, publicId } = body;
 
@@ -80,21 +116,15 @@ export async function DELETE(request: NextRequest) {
 
         let idToDelete = publicId;
 
-        // Extract Public ID from URL if not provided directly
         if (!idToDelete && url) {
-            // Regex to extract path after upload/(v...)/
             const regex = /\/upload\/(?:v\d+\/)?(.+)$/;
             const match = url.match(regex);
 
             if (match && match[1]) {
-                const captured = match[1]; // e.g., "folder/file.jpg" or "folder/file.pdf"
-
-                // If PDF, we likely kept the extension in public_id (from POST change above).
-                // If Image, we likely stripped it.
+                const captured = match[1];
                 if (captured.toLowerCase().endsWith('.pdf')) {
                     idToDelete = captured;
                 } else {
-                    // Strip extension for images
                     idToDelete = captured.replace(/\.[^/.]+$/, "");
                 }
             } else {
