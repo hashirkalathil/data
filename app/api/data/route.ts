@@ -30,13 +30,15 @@ export async function GET(request: NextRequest) {
         // Filter
         let filteredData = data;
 
+        const ignoreFilters = searchParams.get('ignoreFilters') === 'true';
+
         // Retrieve settings for old data visibility
         const settings = getSettings();
         const includeOld = searchParams.get('includeOld') === 'true';
         const totalBeforeOldFilter = data.length;
         let hiddenCount = 0;
 
-        if (settings.hideOldData && !includeOld) {
+        if (!ignoreFilters && settings.hideOldData && !includeOld) {
             filteredData = filteredData.filter((row: any) => {
                 let isHidden = false;
                 const sl = parseInt(row['Sl No.'] || row['Sl No'] || '0');
@@ -70,7 +72,6 @@ export async function GET(request: NextRequest) {
         }
 
         // Single ID fetch
-        // Single ID fetch
         const id = searchParams.get('id');
         if (id) {
             const { getHeaders } = await import('@/lib/googleSheets');
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        if (search) {
+        if (!ignoreFilters && search) {
             filteredData = data.filter((row: any) =>
                 Object.values(row).some((val) =>
                     String(val).toLowerCase().includes(search)
@@ -124,29 +125,31 @@ export async function GET(request: NextRequest) {
         });
 
         // Specific Field Filters
-        const countryFilter = searchParams.get('country')?.toLowerCase();
-        const tradeFilter = searchParams.get('trade')?.toLowerCase();
-        const agentFilter = searchParams.get('agent')?.toLowerCase();
+        if (!ignoreFilters) {
+            const countryFilter = searchParams.get('country')?.toLowerCase();
+            const tradeFilter = searchParams.get('trade')?.toLowerCase();
+            const agentFilter = searchParams.get('agent')?.toLowerCase();
 
-        if (countryFilter) {
-            filteredData = filteredData.filter((row: any) => {
-                const country = String(row['Country Applied For'] || row['Country Applied'] || row['Country'] || '').toLowerCase();
-                return country === countryFilter || country.includes(countryFilter);
-            });
-        }
+            if (countryFilter) {
+                filteredData = filteredData.filter((row: any) => {
+                    const country = String(row['Country Applied For'] || row['Country Applied'] || row['Country'] || '').toLowerCase();
+                    return country === countryFilter || country.includes(countryFilter);
+                });
+            }
 
-        if (tradeFilter) {
-            filteredData = filteredData.filter((row: any) => {
-                const trade = String(row['Trade'] || row['Trade / Job Category'] || row['Profession'] || '').toLowerCase();
-                return trade === tradeFilter || trade.includes(tradeFilter);
-            });
-        }
+            if (tradeFilter) {
+                filteredData = filteredData.filter((row: any) => {
+                    const trade = String(row['Trade'] || row['Trade / Job Category'] || row['Profession'] || '').toLowerCase();
+                    return trade === tradeFilter || trade.includes(tradeFilter);
+                });
+            }
 
-        if (agentFilter) {
-            filteredData = filteredData.filter((row: any) => {
-                const agent = String(row['Agent Name'] || row['Sub Agent Name'] || row['Collected by'] || row['Agent'] || '').toLowerCase();
-                return agent === agentFilter || agent.includes(agentFilter);
-            });
+            if (agentFilter) {
+                filteredData = filteredData.filter((row: any) => {
+                    const agent = String(row['Agent Name'] || row['Sub Agent Name'] || row['Collected by'] || row['Agent'] || '').toLowerCase();
+                    return agent === agentFilter || agent.includes(agentFilter);
+                });
+            }
         }
 
         // Global Sorting
@@ -174,11 +177,16 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // Pagination
+        // Pagination / Export All
         const total = filteredData.length;
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        const paginatedData = filteredData.slice(startIndex, endIndex);
+        const exportAll = searchParams.get('all') === 'true' || searchParams.get('limit') === 'all';
+        let paginatedData = filteredData;
+
+        if (!exportAll) {
+            const startIndex = (page - 1) * limit;
+            const endIndex = startIndex + limit;
+            paginatedData = filteredData.slice(startIndex, endIndex);
+        }
 
         // Fetch headers to ensure frontend can get them even if data is empty
         const { getHeaders } = await import('@/lib/googleSheets');
@@ -197,8 +205,8 @@ export async function GET(request: NextRequest) {
                 allTotal: totalBeforeOldFilter,
                 page,
                 limit,
-                totalPages: Math.ceil(total / limit),
-                isFilteringOld: settings.hideOldData && !includeOld,
+                totalPages: exportAll ? 1 : Math.ceil(total / limit),
+                isFilteringOld: settings.hideOldData && !includeOld && !ignoreFilters,
                 hiddenCount,
                 allowAdminViewAll: settings.allowAdminViewAll,
             },

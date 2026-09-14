@@ -6,7 +6,7 @@ import {
   flexRender,
   ColumnDef,
 } from '@tanstack/react-table';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
@@ -28,6 +28,8 @@ import {
   MinusSquare,
   RotateCcw,
   Filter,
+  ChevronDown,
+  Loader2,
 } from 'lucide-react';
 import { exportToCsv } from '@/lib/exportCsv';
 
@@ -37,10 +39,13 @@ interface DataTableProps<TData, TValue> {
   rawHeaders: string[];
   pageCount: number;
   totalRecords?: number;
+  allTotalRecords?: number;
   isLoading: boolean;
   onRowClick?: (row: TData) => void;
   onOpenColumnModal?: () => void;
   hiddenColumnsCount?: number;
+  hiddenColumns?: string[];
+  isFilteringOld?: boolean;
   density: 'comfortable' | 'compact';
   onToggleDensity: () => void;
   filterOptions?: {
@@ -56,10 +61,13 @@ export function DataTable<TData, TValue>({
   rawHeaders,
   pageCount,
   totalRecords = 0,
+  allTotalRecords = 0,
   isLoading,
   onRowClick,
   onOpenColumnModal,
   hiddenColumnsCount = 0,
+  hiddenColumns = [],
+  isFilteringOld = false,
   density,
   onToggleDensity,
   filterOptions,
@@ -276,18 +284,80 @@ export function DataTable<TData, TValue>({
   const selectedCount = Object.keys(selectedRowIds).filter((k) => selectedRowIds[k]).length;
   const selectedRows = data.filter((r, idx) => selectedRowIds[getRowId(r, idx)]);
 
+  // Exportable headers respecting column visibility settings and excluding actions
+  const exportableHeaders = rawHeaders.filter((h) => !hiddenColumns.includes(h) && h !== 'actions');
+
+  // Export state & logic
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportingType, setExportingType] = useState<'filtered' | 'all' | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    }
+    if (isExportMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isExportMenuOpen]);
+
   // Batch actions
   const handleExportSelected = () => {
     if (!selectedRows.length) return;
-    exportToCsv(`candidates_selected_${selectedRows.length}`, rawHeaders, selectedRows as Record<string, any>[]);
+    exportToCsv(`candidates_selected_${selectedRows.length}`, exportableHeaders, selectedRows as Record<string, any>[]);
+    setIsExportMenuOpen(false);
   };
 
   const handlePrintSelected = () => {
     window.print();
   };
 
-  const handleExportAll = () => {
-    exportToCsv(`candidates_all`, rawHeaders, data as Record<string, any>[]);
+  const handleExport = async (type: 'filtered' | 'all') => {
+    try {
+      setIsExporting(true);
+      setExportingType(type);
+
+      if (type === 'filtered') {
+        // Carry forward current filters & search & includeOld
+        const currentParams = new URLSearchParams(searchParams.toString());
+        currentParams.delete('page');
+        currentParams.delete('limit');
+        currentParams.set('all', 'true');
+        const res = await fetch(`/api/data?${currentParams.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch export data');
+        const result = await res.json();
+        const exportData = result.data || [];
+        exportToCsv(`candidates_filtered_${exportData.length}`, exportableHeaders, exportData);
+      } else {
+        // Entire Database (ignore filters & search & include old records)
+        const params = new URLSearchParams();
+        params.set('all', 'true');
+        params.set('includeOld', 'true');
+        params.set('ignoreFilters', 'true');
+        if (currentSortBy) {
+          params.set('sortBy', currentSortBy);
+          params.set('sortOrder', currentSortOrder);
+        }
+        const res = await fetch(`/api/data?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch database export');
+        const result = await res.json();
+        const exportData = result.data || [];
+        exportToCsv(`candidates_all_database_${exportData.length}`, exportableHeaders, exportData);
+      }
+    } catch (err: any) {
+      console.error('Export error:', err);
+      alert('Error exporting data: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsExporting(false);
+      setExportingType(null);
+      setIsExportMenuOpen(false);
+    }
   };
 
   // Dual scrollbar sync logic
@@ -523,16 +593,128 @@ export function DataTable<TData, TValue>({
             )}
           </div>
 
-          {/* Export CSV Action Button */}
-          <button
-            type="button"
-            onClick={handleExportAll}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs hover:shadow-xs transition-all"
-            title="Export full table data to CSV"
-          >
-            <Download className="h-3.5 w-3.5 text-slate-500" />
-            <span>Export CSV</span>
-          </button>
+          {/* Export CSV Action Dropdown */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
+              disabled={isExporting}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs hover:shadow-xs transition-all cursor-pointer ${
+                isExportMenuOpen
+                  ? 'border-indigo-300 bg-indigo-50/70 text-indigo-700 ring-2 ring-indigo-500/20'
+                  : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
+              } disabled:opacity-60 disabled:cursor-not-allowed`}
+              title="Export data to CSV"
+            >
+              {isExporting ? (
+                <Loader2 className="h-3.5 w-3.5 text-indigo-600 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5 text-slate-500" />
+              )}
+              <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-200/80 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-2.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Export Options</span>
+                  <span className="text-[10px] font-medium text-slate-400">
+                    {hiddenColumnsCount > 0 ? `${exportableHeaders.length} visible cols` : 'All columns'}
+                  </span>
+                </div>
+
+                {/* Option 1: Filtered / Listed Records */}
+                <button
+                  type="button"
+                  onClick={() => handleExport('filtered')}
+                  disabled={isExporting || totalRecords === 0}
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-indigo-50/70 group transition-colors flex items-start gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="mt-0.5 p-1.5 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+                    {exportingType === 'filtered' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Filter className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">
+                        {activeFilterCount > 0 || searchValue ? 'Export Filtered Records' : 'Export Listed Records'}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold group-hover:bg-indigo-100 group-hover:text-indigo-800">
+                        {totalRecords.toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      {searchParams.get('includeOld') === 'true' || !isFilteringOld
+                        ? 'Downloads all matching records including historical data'
+                        : activeFilterCount > 0 || searchValue
+                        ? 'Downloads all records matching current search & filters across all pages'
+                        : 'Downloads all currently active records across all pages'}
+                    </p>
+                  </div>
+                </button>
+
+                {/* Option 2: Entire Database */}
+                <button
+                  type="button"
+                  onClick={() => handleExport('all')}
+                  disabled={isExporting}
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-indigo-50/70 group transition-colors flex items-start gap-3 cursor-pointer disabled:opacity-50"
+                >
+                  <div className="mt-0.5 p-1.5 rounded-lg bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                    {exportingType === 'all' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Database className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">
+                        Export Entire Database
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold group-hover:bg-indigo-100 group-hover:text-indigo-800">
+                        {(allTotalRecords || totalRecords).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Downloads all historical records without filters or date/slNo cutoff
+                    </p>
+                  </div>
+                </button>
+
+                {/* Option 3 (Conditional): Selected Rows */}
+                {selectedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleExportSelected}
+                    disabled={isExporting}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-emerald-50/70 group transition-colors flex items-start gap-3 cursor-pointer border-t border-slate-100"
+                  >
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
+                      <CheckSquare className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold text-slate-800 group-hover:text-emerald-700">
+                          Export Selected Records
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                          {selectedCount}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                        Downloads the {selectedCount} candidate(s) currently selected via checkboxes
+                      </p>
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Total Candidates Live Status Badge */}
           <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs font-medium text-slate-600 shadow-2xs">

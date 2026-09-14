@@ -420,10 +420,13 @@ function DataPage() {
         rawHeaders={headers}
         pageCount={meta.totalPages}
         totalRecords={meta.total}
+        allTotalRecords={meta.allTotal}
         isLoading={isLoading}
         onRowClick={(row) => setSelectedCandidate(row)}
         onOpenColumnModal={() => setIsColumnModalOpen(true)}
         hiddenColumnsCount={hiddenColumns.length}
+        hiddenColumns={hiddenColumns}
+        isFilteringOld={meta.isFilteringOld}
         density={density}
         onToggleDensity={handleToggleDensity}
         filterOptions={filterOptions}
