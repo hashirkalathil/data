@@ -133,6 +133,51 @@ export function DataTable<TData, TValue>({
     router.push(`${window.location.pathname}?${current.toString()}`);
   };
 
+  // Active filter & sorting state tracking
+  const hasActiveSearch = !!searchValue.trim();
+  const hasActiveSort = !!currentSortBy;
+  const hasActiveModifications = activeFilterCount > 0 || hasActiveSearch || hasActiveSort;
+  const activeModificationsCount =
+    activeFilterCount + (hasActiveSearch ? 1 : 0) + (hasActiveSort ? 1 : 0);
+
+  // Clear all filters, search keywords, and sorting in one click
+  const handleResetAllFiltersAndSort = () => {
+    setSearchValue('');
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    current.delete('search');
+    current.delete('country');
+    current.delete('trade');
+    current.delete('agent');
+    current.delete('sortBy');
+    current.delete('sortOrder');
+    current.set('page', '1');
+    // Note: keep 'includeOld' intact as agreed
+    const qs = current.toString();
+    router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
+  const handleRemoveSearch = () => {
+    setSearchValue('');
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    current.delete('search');
+    current.set('page', '1');
+    const qs = current.toString();
+    router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
+  const handleRemoveFilter = (key: 'country' | 'trade' | 'agent') => {
+    handleFilterChange(key, '');
+  };
+
+  const handleRemoveSort = () => {
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    current.delete('sortBy');
+    current.delete('sortOrder');
+    current.set('page', '1');
+    const qs = current.toString();
+    router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
   // Debounced search
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -419,11 +464,13 @@ export function DataTable<TData, TValue>({
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
       
-      {/* Top Toolbar */}
-      <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5 bg-white">
-        
-        {/* Search Input with Clear Button and Shortcut hint */}
-        <div className="relative w-full md:max-w-md">
+      {/* Top Header & Toolbar Area */}
+      <div className="border-b border-slate-100 bg-white">
+        {/* Main Single-Row Toolbar */}
+        <div className="p-4 sm:p-5 pb-2.5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white">
+          
+          {/* Search Input with Clear Button and Shortcut hint */}
+          <div className="relative w-full md:max-w-md">
           <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -715,9 +762,13 @@ export function DataTable<TData, TValue>({
               </div>
             )}
           </div>
+        </div>
+      </div>
 
-          {/* Total Candidates Live Status Badge */}
-          <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs font-medium text-slate-600 shadow-2xs">
+        {/* Sub-bar under Search Bar: Candidate Count & Active Filter Chips */}
+        <div className="px-4 sm:px-5 pb-3.5 pt-0 flex items-center gap-2.5 flex-wrap">
+          {/* Candidate Count Badge */}
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/70 text-xs font-medium text-slate-600 shadow-2xs">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -727,6 +778,98 @@ export function DataTable<TData, TValue>({
             </span>
           </div>
 
+          {/* Active Filter Chips */}
+          {hasActiveModifications && (
+            <div className="flex items-center gap-2 flex-wrap animate-in fade-in duration-150">
+              <div className="h-3.5 w-px bg-slate-200 hidden sm:block mx-0.5" />
+
+              {/* Search Chip */}
+              {hasActiveSearch && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>Search: <strong className="font-semibold">&ldquo;{searchValue}&rdquo;</strong></span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveSearch}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Country Chip */}
+              {selectedCountry && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>Country: <strong className="font-semibold">{selectedCountry}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter('country')}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Remove country filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Trade Chip */}
+              {selectedTrade && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>Trade: <strong className="font-semibold">{selectedTrade}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter('trade')}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Remove trade filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Agent Chip */}
+              {selectedAgent && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>Agent: <strong className="font-semibold">{selectedAgent}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter('agent')}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Remove agent filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Sorting Chip */}
+              {currentSortBy && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium shadow-2xs">
+                  <span>Sort: <strong className="font-semibold">{currentSortBy} ({currentSortOrder === 'desc' ? 'Desc' : 'Asc'})</strong></span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveSort}
+                    className="hover:bg-slate-200 p-0.5 rounded text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    title="Clear sorting"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Clear All Button */}
+              <button
+                type="button"
+                onClick={handleResetAllFiltersAndSort}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all cursor-pointer shadow-2xs ml-0.5"
+                title="Clear all active filters, search, and sorting"
+              >
+                <RotateCcw className="h-3 w-3 text-rose-500" />
+                <span>Clear all</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
