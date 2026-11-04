@@ -6,7 +6,7 @@ import {
   flexRender,
   ColumnDef,
 } from '@tanstack/react-table';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
@@ -30,6 +30,10 @@ import {
   Filter,
   ChevronDown,
   Loader2,
+  MapPin,
+  Briefcase,
+  Hash,
+  Check,
 } from 'lucide-react';
 import { exportToCsv } from '@/lib/exportCsv';
 
@@ -52,6 +56,9 @@ interface DataTableProps<TData, TValue> {
     countries: string[];
     trades: string[];
     agents: string[];
+    states?: string[];
+    districts?: string[];
+    stateDistrictMap?: Record<string, string[]>;
   };
 }
 
@@ -111,26 +118,118 @@ export function DataTable<TData, TValue>({
   const selectedCountry = searchParams.get('country') || '';
   const selectedTrade = searchParams.get('trade') || '';
   const selectedAgent = searchParams.get('agent') || '';
-  const activeFilterCount = (selectedCountry ? 1 : 0) + (selectedTrade ? 1 : 0) + (selectedAgent ? 1 : 0);
+  const selectedState = searchParams.get('state') || '';
+  const selectedDistrict = searchParams.get('district') || '';
+  const selectedPincode = searchParams.get('pincode') || '';
 
-  const handleFilterChange = (key: 'country' | 'trade' | 'agent', value: string) => {
-    const current = new URLSearchParams(Array.from(searchParams.entries()));
-    if (value) {
-      current.set(key, value);
-    } else {
-      current.delete(key);
+  const activeFilterCount =
+    (selectedCountry ? 1 : 0) +
+    (selectedTrade ? 1 : 0) +
+    (selectedAgent ? 1 : 0) +
+    (selectedState ? 1 : 0) +
+    (selectedDistrict ? 1 : 0) +
+    (selectedPincode ? 1 : 0);
+
+  // Staged filter state within the popover
+  const [stagedCountry, setStagedCountry] = useState(selectedCountry);
+  const [stagedTrade, setStagedTrade] = useState(selectedTrade);
+  const [stagedAgent, setStagedAgent] = useState(selectedAgent);
+  const [stagedState, setStagedState] = useState(selectedState);
+  const [stagedDistrict, setStagedDistrict] = useState(selectedDistrict);
+  const [stagedPincode, setStagedPincode] = useState(selectedPincode);
+
+  // Sync staged state whenever the popover opens or active URL filters change
+  useEffect(() => {
+    setStagedCountry(selectedCountry);
+    setStagedTrade(selectedTrade);
+    setStagedAgent(selectedAgent);
+    setStagedState(selectedState);
+    setStagedDistrict(selectedDistrict);
+    setStagedPincode(selectedPincode);
+  }, [selectedCountry, selectedTrade, selectedAgent, selectedState, selectedDistrict, selectedPincode, isFilterOpen]);
+
+  // Available districts (cascades when stagedState is selected)
+  const availableDistricts = useMemo(() => {
+    if (stagedState && filterOptions?.stateDistrictMap?.[stagedState]) {
+      return filterOptions.stateDistrictMap[stagedState];
     }
+    return filterOptions?.districts || [];
+  }, [stagedState, filterOptions]);
+
+  const handleStateChange = (newState: string) => {
+    setStagedState(newState);
+    if (newState && filterOptions?.stateDistrictMap?.[newState]) {
+      const allowed = filterOptions.stateDistrictMap[newState];
+      if (stagedDistrict && !allowed.includes(stagedDistrict)) {
+        setStagedDistrict('');
+      }
+    }
+  };
+
+  const stagedActiveCount =
+    (stagedCountry ? 1 : 0) +
+    (stagedTrade ? 1 : 0) +
+    (stagedAgent ? 1 : 0) +
+    (stagedState ? 1 : 0) +
+    (stagedDistrict ? 1 : 0) +
+    (stagedPincode.trim() ? 1 : 0);
+
+  type FilterKey = 'country' | 'trade' | 'agent' | 'state' | 'district' | 'pincode';
+
+  const handleApplyFilters = () => {
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    const setOrDelete = (key: string, val: string) => {
+      const trimmed = val ? val.trim() : '';
+      if (trimmed) {
+        current.set(key, trimmed);
+      } else {
+        current.delete(key);
+      }
+    };
+
+    setOrDelete('country', stagedCountry);
+    setOrDelete('trade', stagedTrade);
+    setOrDelete('agent', stagedAgent);
+    setOrDelete('state', stagedState);
+    setOrDelete('district', stagedDistrict);
+    setOrDelete('pincode', stagedPincode);
+
     current.set('page', '1');
-    router.push(`${window.location.pathname}?${current.toString()}`);
+    setIsFilterOpen(false);
+    const qs = current.toString();
+    router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
+  const handleResetPopoverFilters = () => {
+    setStagedCountry('');
+    setStagedTrade('');
+    setStagedAgent('');
+    setStagedState('');
+    setStagedDistrict('');
+    setStagedPincode('');
   };
 
   const handleClearAllFilters = () => {
     const current = new URLSearchParams(Array.from(searchParams.entries()));
-    current.delete('country');
-    current.delete('trade');
-    current.delete('agent');
+    ['country', 'trade', 'agent', 'state', 'district', 'pincode'].forEach((k) => current.delete(k));
     current.set('page', '1');
-    router.push(`${window.location.pathname}?${current.toString()}`);
+    setStagedCountry('');
+    setStagedTrade('');
+    setStagedAgent('');
+    setStagedState('');
+    setStagedDistrict('');
+    setStagedPincode('');
+    setIsFilterOpen(false);
+    const qs = current.toString();
+    router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  };
+
+  const handleRemoveFilter = (key: FilterKey) => {
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    current.delete(key);
+    current.set('page', '1');
+    const qs = current.toString();
+    router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
   };
 
   // Active filter & sorting state tracking
@@ -144,14 +243,10 @@ export function DataTable<TData, TValue>({
   const handleResetAllFiltersAndSort = () => {
     setSearchValue('');
     const current = new URLSearchParams(Array.from(searchParams.entries()));
-    current.delete('search');
-    current.delete('country');
-    current.delete('trade');
-    current.delete('agent');
-    current.delete('sortBy');
-    current.delete('sortOrder');
+    ['search', 'country', 'trade', 'agent', 'state', 'district', 'pincode', 'sortBy', 'sortOrder'].forEach((k) =>
+      current.delete(k)
+    );
     current.set('page', '1');
-    // Note: keep 'includeOld' intact as agreed
     const qs = current.toString();
     router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
   };
@@ -163,10 +258,6 @@ export function DataTable<TData, TValue>({
     current.set('page', '1');
     const qs = current.toString();
     router.push(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
-  };
-
-  const handleRemoveFilter = (key: 'country' | 'trade' | 'agent') => {
-    handleFilterChange(key, '');
   };
 
   const handleRemoveSort = () => {
@@ -527,64 +618,224 @@ export function DataTable<TData, TValue>({
                   className="fixed inset-0 z-40"
                   onClick={() => setIsFilterOpen(false)}
                 />
-                <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200/80 p-4 z-50 space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <span className="text-xs font-bold text-slate-900">Filter Records</span>
-                    {activeFilterCount > 0 && (
+                <div className="absolute right-0 mt-2 w-[calc(100vw-32px)] sm:w-[500px] md:w-[540px] bg-white rounded-2xl shadow-xl shadow-slate-900/10 border border-slate-200/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  {/* Popover Header */}
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/70">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100/80 flex items-center justify-center text-indigo-600 shadow-2xs">
+                        <Filter className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900">Filter Records</span>
+                          {activeFilterCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+                              {activeFilterCount} active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500">Refine candidates by location, role, and source</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {stagedActiveCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleResetPopoverFilters}
+                          className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 px-2 py-1 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                        >
+                          Clear fields
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={handleClearAllFilters}
-                        className="text-[11px] font-semibold text-rose-600 hover:underline"
+                        onClick={() => setIsFilterOpen(false)}
+                        className="h-6 w-6 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Close filter"
                       >
-                        Reset all
+                        <X className="h-3.5 w-3.5" />
                       </button>
-                    )}
+                    </div>
                   </div>
 
-                  {/* Country Filter */}
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-500 block">Country</label>
-                    <select
-                      value={selectedCountry}
-                      onChange={(e) => handleFilterChange('country', e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    >
-                      <option value="">All Countries</option>
-                      {filterOptions?.countries?.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                  {/* Popover Body: 2 Columns */}
+                  <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                    
+                    {/* Column 1: Location & Geography */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-1.5 text-slate-700 pb-0.5">
+                        <MapPin className="h-3.5 w-3.5 text-indigo-600" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Location</span>
+                      </div>
+
+                      {/* Country Filter */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-600 block">Country</label>
+                        <select
+                          value={stagedCountry}
+                          onChange={(e) => setStagedCountry(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                        >
+                          <option value="">All Countries</option>
+                          {filterOptions?.countries?.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* State Filter */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-600 block">State</label>
+                        <select
+                          value={stagedState}
+                          onChange={(e) => handleStateChange(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                        >
+                          <option value="">All States</option>
+                          {filterOptions?.states?.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* District Filter (Cascading) */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-semibold text-slate-600 block">District</label>
+                          {stagedState && (
+                            <span className="text-[10px] text-indigo-600 font-medium">in {stagedState}</span>
+                          )}
+                        </div>
+                        <select
+                          value={stagedDistrict}
+                          onChange={(e) => setStagedDistrict(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                        >
+                          <option value="">All Districts {stagedState ? `(${availableDistricts.length})` : ''}</option>
+                          {availableDistricts.map((d) => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Pincode Filter */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-600 block">Pin Code</label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                            <Hash className="h-3 w-3" />
+                          </div>
+                          <input
+                            type="text"
+                            value={stagedPincode}
+                            onChange={(e) => setStagedPincode(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleApplyFilters();
+                              }
+                            }}
+                            placeholder="e.g. 560001"
+                            maxLength={10}
+                            className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                          />
+                          {stagedPincode && (
+                            <button
+                              type="button"
+                              onClick={() => setStagedPincode('')}
+                              className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                              title="Clear pincode"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 2: Job & Agent */}
+                    <div className="space-y-3 pt-3 sm:pt-0 sm:pl-4">
+                      <div className="flex items-center gap-1.5 text-slate-700 pb-0.5">
+                        <Briefcase className="h-3.5 w-3.5 text-indigo-600" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Job & Source</span>
+                      </div>
+
+                      {/* Trade Filter */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-600 block">Profession / Trade</label>
+                        <select
+                          value={stagedTrade}
+                          onChange={(e) => setStagedTrade(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                        >
+                          <option value="">All Trades</option>
+                          {filterOptions?.trades?.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Agent Filter */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-600 block">Agent / Source</label>
+                        <select
+                          value={stagedAgent}
+                          onChange={(e) => setStagedAgent(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
+                        >
+                          <option value="">All Agents</option>
+                          {filterOptions?.agents?.map((a) => (
+                            <option key={a} value={a}>{a}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Helpful info box */}
+                      <div className="mt-4 p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-[11px] text-slate-500 leading-relaxed">
+                        <p className="font-semibold text-slate-700 mb-0.5">Location Filtering</p>
+                        Selecting a State narrows down available Districts. Pin code matches exact or partial postal codes.
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Trade Filter */}
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-500 block">Profession / Trade</label>
-                    <select
-                      value={selectedTrade}
-                      onChange={(e) => handleFilterChange('trade', e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    >
-                      <option value="">All Trades</option>
-                      {filterOptions?.trades?.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                  {/* Popover Footer: Cancel / Reset / Apply */}
+                  <div className="px-4 py-3 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div>
+                      {activeFilterCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearAllFilters}
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                        >
+                          Reset all active
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsFilterOpen(false)}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyFilters}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Apply Filters</span>
+                        {stagedActiveCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-indigo-500 text-white text-[10px] font-bold">
+                            {stagedActiveCount}
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Agent Filter */}
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-500 block">Agent / Source</label>
-                    <select
-                      value={selectedAgent}
-                      onChange={(e) => handleFilterChange('agent', e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    >
-                      <option value="">All Agents</option>
-                      {filterOptions?.agents?.map((a) => (
-                        <option key={a} value={a}>{a}</option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
               </>
             )}
@@ -807,6 +1058,51 @@ export function DataTable<TData, TValue>({
                     onClick={() => handleRemoveFilter('country')}
                     className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
                     title="Remove country filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* State Chip */}
+              {selectedState && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>State: <strong className="font-semibold">{selectedState}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter('state')}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Remove state filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* District Chip */}
+              {selectedDistrict && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>District: <strong className="font-semibold">{selectedDistrict}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter('district')}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Remove district filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Pincode Chip */}
+              {selectedPincode && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-50/90 border border-indigo-200/80 text-indigo-700 text-xs font-medium shadow-2xs">
+                  <span>Pincode: <strong className="font-semibold">{selectedPincode}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter('pincode')}
+                    className="hover:bg-indigo-200/60 p-0.5 rounded text-indigo-500 hover:text-indigo-800 transition-colors cursor-pointer"
+                    title="Remove pincode filter"
                   >
                     <X className="h-3 w-3" />
                   </button>

@@ -30,7 +30,17 @@ function DataPage() {
     countries: string[];
     trades: string[];
     agents: string[];
-  }>({ countries: [], trades: [], agents: [] });
+    states: string[];
+    districts: string[];
+    stateDistrictMap: Record<string, string[]>;
+  }>({
+    countries: [],
+    trades: [],
+    agents: [],
+    states: [],
+    districts: [],
+    stateDistrictMap: {},
+  });
 
   // Drawer & Modals state
   const [selectedCandidate, setSelectedCandidate] = useState<DataRow | null>(null);
