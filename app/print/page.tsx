@@ -6,10 +6,19 @@ import { clearPrintRequest, getPrintRequest } from '@/lib/printPreview';
 import styles from './preview.module.css';
 
 const paperSizes = {
+  A0: [841, 1189],
+  A1: [594, 841],
+  A2: [420, 594],
+  A3: [297, 420],
   A4: [210, 297],
+  A5: [148, 210],
+  A6: [105, 148],
   Letter: [215.9, 279.4],
   Legal: [215.9, 355.6],
+  Tabloid: [279.4, 431.8],
 } as const;
+
+const textSizes = [6, 7, 8, 9, 10, 11, 12];
 
 type PaperSize = keyof typeof paperSizes;
 type Orientation = 'portrait' | 'landscape';
@@ -21,6 +30,7 @@ export default function PrintPreviewPage() {
   const [selectedHeaders, setSelectedHeaders] = useState(() => new Set(request?.visibleHeaders));
   const [paper, setPaper] = useState<PaperSize>('A4');
   const [orientation, setOrientation] = useState<Orientation>('portrait');
+  const [textSize, setTextSize] = useState(9);
 
   useEffect(() => {
     clearPrintRequest(request);
@@ -96,9 +106,7 @@ export default function PrintPreviewPage() {
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-600" title="Set the document’s paper size">
               Paper size
               <select className={controlClass} value={paper} onChange={(event) => setPaper(event.target.value as PaperSize)}>
-                <option>A4</option>
-                <option>Letter</option>
-                <option>Legal</option>
+                {Object.keys(paperSizes).map((size) => <option key={size}>{size}</option>)}
               </select>
             </label>
 
@@ -107,6 +115,13 @@ export default function PrintPreviewPage() {
               <select className={controlClass} value={orientation} onChange={(event) => setOrientation(event.target.value as Orientation)}>
                 <option value="portrait">Portrait</option>
                 <option value="landscape">Landscape</option>
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-600" title="Set the text size for table headings and records">
+              Text size
+              <select className={controlClass} value={textSize} onChange={(event) => setTextSize(Number(event.target.value))}>
+                {textSizes.map((size) => <option key={size} value={size}>{size} pt</option>)}
               </select>
             </label>
 
@@ -126,7 +141,7 @@ export default function PrintPreviewPage() {
       <div className={styles.canvas}>
         <article className={styles.sheet} style={{ width: `${width}mm`, minHeight: `${height}mm` }} aria-label="Document preview">
           {hasDocument ? (
-            <table className={styles.records}>
+            <table className={styles.records} style={{ fontSize: `${textSize}pt` }}>
               <thead>
                 <tr>{columns.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr>
               </thead>
