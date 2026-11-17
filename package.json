@@ -13,6 +13,7 @@
     "@types/streamifier": "^0.1.2",
     "cloudinary": "^2.9.0",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "google-auth-library": "^10.5.0",
     "google-spreadsheet": "^5.0.2",
     "googleapis": "^171.0.0",

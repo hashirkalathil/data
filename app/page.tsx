@@ -436,7 +436,6 @@ function DataPage() {
         onOpenColumnModal={() => setIsColumnModalOpen(true)}
         hiddenColumnsCount={hiddenColumns.length}
         hiddenColumns={hiddenColumns}
-        isFilteringOld={meta.isFilteringOld}
         density={density}
         onToggleDensity={handleToggleDensity}
         filterOptions={filterOptions}

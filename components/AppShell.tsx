@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
 
@@ -13,6 +14,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, user }: AppShellProps) {
+  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -31,6 +33,8 @@ export function AppShell({ children, user }: AppShellProps) {
       return next;
     });
   };
+
+  if (pathname === '/print') return <>{children}</>;
 
   return (
     <div className="min-h-screen bg-slate-50 flex">

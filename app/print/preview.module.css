@@ -1,0 +1,85 @@
+.preview {
+  min-height: 100vh;
+  background: #f1f5f9;
+}
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid #e2e8f0;
+  background: white;
+}
+
+.canvas {
+  overflow: auto;
+  padding: 1rem;
+}
+
+.sheet {
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding: 12mm;
+  background: white;
+  box-shadow: 0 1px 6px #0f172a24;
+  color: #0f172a;
+}
+
+.records {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 9pt;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.records th,
+.records td {
+  border: 1px solid #cbd5e1;
+  padding: 0.3em;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.records th {
+  background: #f1f5f9;
+}
+
+.empty {
+  color: #475569;
+  font-size: 0.875rem;
+}
+
+@media print {
+  .toolbar,
+  .empty {
+    display: none;
+  }
+
+  .preview,
+  .sheet {
+    background: white;
+    min-height: 0 !important;
+  }
+
+  .canvas {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .sheet {
+    width: auto !important;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .records thead {
+    display: table-header-group;
+  }
+
+  .records tr {
+    break-inside: avoid;
+  }
+}

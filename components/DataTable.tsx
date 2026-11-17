@@ -12,7 +12,6 @@ import {
   Search,
   X,
   SlidersHorizontal,
-  Download,
   Rows,
   ChevronLeft,
   ChevronRight,
@@ -22,20 +21,24 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Printer,
   CheckSquare,
   Square,
   MinusSquare,
   RotateCcw,
   Filter,
   ChevronDown,
-  Loader2,
   MapPin,
   Briefcase,
   Hash,
   Check,
 } from 'lucide-react';
-import { exportToCsv } from '@/lib/exportCsv';
+import { downloadExcel } from '@/lib/exportExcel';
+import { setPrintRequest, type ExportRow } from '@/lib/printPreview';
+
+type ExportFormat = 'excel' | 'pdf';
+type ExportScope = 'filtered' | 'all' | 'selected';
+
+const exportButtonClass = 'inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-indigo-600 disabled:opacity-50';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -49,7 +52,6 @@ interface DataTableProps<TData, TValue> {
   onOpenColumnModal?: () => void;
   hiddenColumnsCount?: number;
   hiddenColumns?: string[];
-  isFilteringOld?: boolean;
   density: 'comfortable' | 'compact';
   onToggleDensity: () => void;
   filterOptions?: {
@@ -74,7 +76,6 @@ export function DataTable<TData, TValue>({
   onOpenColumnModal,
   hiddenColumnsCount = 0,
   hiddenColumns = [],
-  isFilteringOld = false,
   density,
   onToggleDensity,
   filterOptions,
@@ -296,10 +297,10 @@ export function DataTable<TData, TValue>({
     setSearchValue(searchParams.get('search') || '');
   }, [searchParams]);
 
-  // Reset row selection when page or search changes
+  // Selection applies to the current result set.
   useEffect(() => {
     setSelectedRowIds({});
-  }, [currentPage, searchValue]);
+  }, [currentPage, searchValue, data]);
 
   // Navigation handlers
   const handlePageChange = (newPage: number) => {
@@ -387,114 +388,135 @@ export function DataTable<TData, TValue>({
   };
 
   // Row selection helpers
-  const getRowId = (row: any, index: number) => String(row['Sl No.'] || row['Sl No'] || index);
-
-  const isAllPageSelected = data.length > 0 && data.every((r, idx) => selectedRowIds[getRowId(r, idx)]);
-  const isSomePageSelected = data.some((r, idx) => selectedRowIds[getRowId(r, idx)]) && !isAllPageSelected;
+  const selectedRows = data.filter((_, index) => selectedRowIds[index]);
+  const selectedCount = selectedRows.length;
+  const isAllPageSelected = data.length > 0 && selectedCount === data.length;
+  const isSomePageSelected = selectedCount > 0 && !isAllPageSelected;
 
   const handleToggleSelectAll = () => {
-    if (isAllPageSelected) {
-      setSelectedRowIds({});
-    } else {
-      const next: Record<string, boolean> = {};
-      data.forEach((r, idx) => {
-        next[getRowId(r, idx)] = true;
-      });
-      setSelectedRowIds(next);
-    }
+    setSelectedRowIds(isAllPageSelected ? {} : Object.fromEntries(data.map((_, index) => [index, true])));
   };
 
-  const handleToggleSelectRow = (rowId: string, e: React.MouseEvent) => {
+  const handleToggleSelectRow = (index: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedRowIds((prev) => {
-      const next = { ...prev };
-      if (next[rowId]) {
-        delete next[rowId];
-      } else {
-        next[rowId] = true;
-      }
-      return next;
-    });
+    setSelectedRowIds((previous) => ({ ...previous, [index]: !previous[index] }));
   };
 
-  const selectedCount = Object.keys(selectedRowIds).filter((k) => selectedRowIds[k]).length;
-  const selectedRows = data.filter((r, idx) => selectedRowIds[getRowId(r, idx)]);
-
-  // Exportable headers respecting column visibility settings and excluding actions
-  const exportableHeaders = rawHeaders.filter((h) => !hiddenColumns.includes(h) && h !== 'actions');
-
-  // Export state & logic
+  const dataHeaders = rawHeaders.filter((header) => header !== 'actions');
+  const visibleHeaders = dataHeaders.filter((header) => !hiddenColumns.includes(header));
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportingType, setExportingType] = useState<'filtered' | 'all' | null>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('excel');
+  const [exportingScope, setExportingScope] = useState<ExportScope | null>(null);
+  const [exportError, setExportError] = useState<{ scope: ExportScope; message: string } | null>(null);
+  const exportInProgress = useRef(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const exportDialogRef = useRef<HTMLDialogElement>(null);
+  const cancelExportRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+    if (!isExportMenuOpen) return;
+    function handleClickOutside(event: PointerEvent) {
+      if (!exportMenuRef.current?.contains(event.target as Node)) {
         setIsExportMenuOpen(false);
       }
     }
-    if (isExportMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, [isExportMenuOpen]);
 
-  // Batch actions
-  const handleExportSelected = () => {
-    if (!selectedRows.length) return;
-    exportToCsv(`candidates_selected_${selectedRows.length}`, exportableHeaders, selectedRows as Record<string, any>[]);
+  const openExportDialog = (format: ExportFormat, trigger: HTMLButtonElement | null) => {
+    if (exportInProgress.current) return;
+    returnFocusRef.current = trigger;
+    setExportFormat(format);
+    setExportError(null);
     setIsExportMenuOpen(false);
+    exportDialogRef.current?.showModal();
+    cancelExportRef.current?.focus();
   };
 
-  const handlePrintSelected = () => {
-    window.print();
+  const openPrint = (mode: 'pdf' | 'print', rows: ExportRow[]) => {
+    setPrintRequest({
+      mode,
+      rows,
+      headers: dataHeaders,
+      visibleHeaders,
+      returnHref: window.location.pathname + window.location.search,
+    });
+    router.push('/print');
   };
 
-  const handleExport = async (type: 'filtered' | 'all') => {
+  const handleExport = async (format: ExportFormat, scope: ExportScope) => {
+    if (exportInProgress.current || isLoading || !dataHeaders.length ||
+        (format === 'excel' && !visibleHeaders.length)) return;
+
+    exportInProgress.current = true;
+    setExportingScope(scope);
+    setExportError(null);
     try {
-      setIsExporting(true);
-      setExportingType(type);
-
-      if (type === 'filtered') {
-        // Carry forward current filters & search & includeOld
-        const currentParams = new URLSearchParams(searchParams.toString());
-        currentParams.delete('page');
-        currentParams.delete('limit');
-        currentParams.set('all', 'true');
-        const res = await fetch(`/api/data?${currentParams.toString()}`);
-        if (!res.ok) throw new Error('Failed to fetch export data');
-        const result = await res.json();
-        const exportData = result.data || [];
-        exportToCsv(`candidates_filtered_${exportData.length}`, exportableHeaders, exportData);
-      } else {
-        // Entire Database (ignore filters & search & include old records)
-        const params = new URLSearchParams();
-        params.set('all', 'true');
-        params.set('includeOld', 'true');
-        params.set('ignoreFilters', 'true');
-        if (currentSortBy) {
-          params.set('sortBy', currentSortBy);
-          params.set('sortOrder', currentSortOrder);
+      let rows = selectedRows as ExportRow[];
+      if (scope !== 'selected') {
+        const params = new URLSearchParams(scope === 'all' ? undefined : searchParams.toString());
+        if (scope === 'all') {
+          if (currentSortBy) {
+            params.set('sortBy', currentSortBy);
+            params.set('sortOrder', currentSortOrder);
+          }
+          params.set('includeOld', 'true');
+          params.set('ignoreFilters', 'true');
+        } else {
+          params.delete('page');
+          params.delete('limit');
         }
-        const res = await fetch(`/api/data?${params.toString()}`);
-        if (!res.ok) throw new Error('Failed to fetch database export');
-        const result = await res.json();
-        const exportData = result.data || [];
-        exportToCsv(`candidates_all_database_${exportData.length}`, exportableHeaders, exportData);
+        params.set('all', 'true');
+        const response = await fetch(`/api/data?${params}`, { signal: AbortSignal.timeout(60_000) });
+        if (!response.ok) {
+          throw new Error(response.status === 401 ? 'Your session expired. Sign in and try again.' : 'Could not load records.');
+        }
+        const result = await response.json() as { data: ExportRow[] };
+        rows = result.data;
       }
-    } catch (err: any) {
-      console.error('Export error:', err);
-      alert('Error exporting data: ' + (err.message || 'Unknown error'));
+      if (!rows.length) throw new Error('No records are available for this choice.');
+
+      if (format === 'pdf') openPrint('pdf', rows);
+      else await downloadExcel(scope, visibleHeaders, rows);
+      exportDialogRef.current?.close();
+    } catch (error) {
+      setExportError({
+        scope,
+        message: error instanceof Error && error.name === 'Error'
+          ? error.message
+          : 'Could not prepare the export. Try again.',
+      });
     } finally {
-      setIsExporting(false);
-      setExportingType(null);
-      setIsExportMenuOpen(false);
+      exportInProgress.current = false;
+      setExportingScope(null);
     }
   };
+
+  const exportScopes = [
+    {
+      scope: 'filtered',
+      label: activeFilterCount > 0 || searchParams.get('search') ? 'Filtered Records' : 'Listed Records',
+      count: totalRecords,
+      help: 'Includes all matching records across pages, using the current search, filters, and history setting.',
+    },
+    {
+      scope: 'all',
+      label: 'Entire Database',
+      count: allTotalRecords,
+      help: 'Includes historical records and ignores search, filters, and cutoffs.',
+    },
+    {
+      scope: 'selected',
+      label: 'Selected Records',
+      count: selectedCount,
+      help: 'Includes the checked rows on this page.',
+    },
+  ] as const;
+
+  const exportOptionsDisabled = isLoading || !dataHeaders.length || (exportFormat === 'excel' && !visibleHeaders.length);
 
   // Dual scrollbar sync logic
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -891,128 +913,122 @@ export function DataTable<TData, TValue>({
             )}
           </div>
 
-          {/* Export CSV Action Dropdown */}
-          <div className="relative" ref={exportMenuRef}>
+          <button
+            type="button"
+            className={exportButtonClass}
+            onClick={(event) => openExportDialog('pdf', event.currentTarget)}
+            title="Choose records for a PDF preview"
+          >
+            PDF
+          </button>
+          <div
+            className="relative"
+            ref={exportMenuRef}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setIsExportMenuOpen(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && isExportMenuOpen) {
+                setIsExportMenuOpen(false);
+                exportButtonRef.current?.focus();
+              }
+            }}
+          >
             <button
               type="button"
-              onClick={() => setIsExportMenuOpen((prev) => !prev)}
-              disabled={isExporting}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs hover:shadow-xs transition-all cursor-pointer ${
-                isExportMenuOpen
-                  ? 'border-indigo-300 bg-indigo-50/70 text-indigo-700 ring-2 ring-indigo-500/20'
-                  : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
-              } disabled:opacity-60 disabled:cursor-not-allowed`}
-              title="Export data to CSV"
+              ref={exportButtonRef}
+              onClick={() => setIsExportMenuOpen((open) => !open)}
+              aria-expanded={isExportMenuOpen}
+              aria-controls="export-formats"
+              className={exportButtonClass}
             >
-              {isExporting ? (
-                <Loader2 className="h-3.5 w-3.5 text-indigo-600 animate-spin" />
-              ) : (
-                <Download className="h-3.5 w-3.5 text-slate-500" />
-              )}
-              <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
-              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+              Export <ChevronDown className="h-3 w-3" aria-hidden="true" />
             </button>
-
-            {isExportMenuOpen && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-200/80 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-2.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Export Options</span>
-                  <span className="text-[10px] font-medium text-slate-400">
-                    {hiddenColumnsCount > 0 ? `${exportableHeaders.length} visible cols` : 'All columns'}
-                  </span>
-                </div>
-
-                {/* Option 1: Filtered / Listed Records */}
+            <div
+              id="export-formats"
+              hidden={!isExportMenuOpen}
+              className="absolute right-0 z-50 mt-2 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+            >
+              {(['pdf', 'excel'] as const).map((format) => (
                 <button
+                  key={format}
                   type="button"
-                  onClick={() => handleExport('filtered')}
-                  disabled={isExporting || totalRecords === 0}
-                  className="w-full text-left p-2.5 rounded-xl hover:bg-indigo-50/70 group transition-colors flex items-start gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-indigo-600"
+                  onClick={() => openExportDialog(format, exportButtonRef.current)}
                 >
-                  <div className="mt-0.5 p-1.5 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
-                    {exportingType === 'filtered' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Filter className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">
-                        {activeFilterCount > 0 || searchValue ? 'Export Filtered Records' : 'Export Listed Records'}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold group-hover:bg-indigo-100 group-hover:text-indigo-800">
-                        {totalRecords.toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                      {searchParams.get('includeOld') === 'true' || !isFilteringOld
-                        ? 'Downloads all matching records including historical data'
-                        : activeFilterCount > 0 || searchValue
-                        ? 'Downloads all records matching current search & filters across all pages'
-                        : 'Downloads all currently active records across all pages'}
-                    </p>
-                  </div>
+                  {format === 'pdf' ? 'PDF' : 'Excel'}
                 </button>
+              ))}
+            </div>
+          </div>
 
-                {/* Option 2: Entire Database */}
-                <button
-                  type="button"
-                  onClick={() => handleExport('all')}
-                  disabled={isExporting}
-                  className="w-full text-left p-2.5 rounded-xl hover:bg-indigo-50/70 group transition-colors flex items-start gap-3 cursor-pointer disabled:opacity-50"
-                >
-                  <div className="mt-0.5 p-1.5 rounded-lg bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
-                    {exportingType === 'all' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Database className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">
-                        Export Entire Database
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold group-hover:bg-indigo-100 group-hover:text-indigo-800">
-                        {(allTotalRecords || totalRecords).toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                      Downloads all historical records without filters or date/slNo cutoff
-                    </p>
-                  </div>
-                </button>
-
-                {/* Option 3 (Conditional): Selected Rows */}
-                {selectedCount > 0 && (
+          <dialog
+            ref={exportDialogRef}
+            aria-labelledby="export-dialog-title"
+            className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-slate-950/45"
+            onCancel={(event) => {
+              if (exportInProgress.current) event.preventDefault();
+            }}
+            onClose={() => {
+              setExportError(null);
+              returnFocusRef.current?.focus();
+            }}
+          >
+            <h2 id="export-dialog-title" className="text-lg font-semibold">
+              {exportFormat === 'pdf' ? 'PDF preview' : 'Export to Excel'}
+            </h2>
+            <div className="mt-4 space-y-2">
+              {exportScopes.filter(({ scope, count }) => scope !== 'selected' || count > 0).map(({ scope, label, count, help }) => (
+                <div key={scope} className="group relative">
                   <button
                     type="button"
-                    onClick={handleExportSelected}
-                    disabled={isExporting}
-                    className="w-full text-left p-2.5 rounded-xl hover:bg-emerald-50/70 group transition-colors flex items-start gap-3 cursor-pointer border-t border-slate-100"
+                    disabled={exportOptionsDisabled || exportingScope !== null || count === 0}
+                    aria-describedby={`export-scope-${scope}`}
+                    onClick={() => void handleExport(exportFormat, scope)}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5 text-left text-sm font-medium hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-indigo-600 disabled:opacity-50"
                   >
-                    <div className="mt-0.5 p-1.5 rounded-lg bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
-                      <CheckSquare className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold text-slate-800 group-hover:text-emerald-700">
-                          Export Selected Records
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                          {selectedCount}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                        Downloads the {selectedCount} candidate(s) currently selected via checkboxes
-                      </p>
-                    </div>
+                    {label}
+                    <span className="text-xs tabular-nums text-slate-600">{count.toLocaleString()}</span>
                   </button>
-                )}
+                  <span
+                    id={`export-scope-${scope}`}
+                    role="tooltip"
+                    className="pointer-events-none absolute inset-x-2 top-full z-10 mt-1 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                  >
+                    {help}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {exportFormat === 'excel' && !visibleHeaders.length && !isLoading && (
+              <p className="mt-3 text-sm text-slate-600">Show at least one table column to export to Excel.</p>
+            )}
+            {exportingScope && <p role="status" className="mt-3 text-sm text-slate-600">Preparing export…</p>}
+            {exportError && (
+              <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-sm text-rose-700">
+                {exportError.message}
+                <button
+                  type="button"
+                  className="font-semibold underline disabled:opacity-50"
+                  disabled={exportOptionsDisabled}
+                  onClick={() => void handleExport(exportFormat, exportError.scope)}
+                >
+                  Retry
+                </button>
               </div>
             )}
-          </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                className={exportButtonClass}
+                ref={cancelExportRef}
+                disabled={exportingScope !== null}
+                onClick={() => exportDialogRef.current?.close()}
+              >
+                Cancel
+              </button>
+            </div>
+          </dialog>
         </div>
       </div>
 
@@ -1195,6 +1211,7 @@ export function DataTable<TData, TValue>({
                     onClick={handleToggleSelectAll}
                     className="p-1 rounded-md text-slate-400 hover:text-indigo-600 transition-colors"
                     title={isAllPageSelected ? 'Deselect all' : 'Select all on page'}
+                    aria-label={isAllPageSelected ? 'Deselect all' : 'Select all on page'}
                   >
                     {isAllPageSelected ? (
                       <CheckSquare className="h-4 w-4 text-indigo-600" />
@@ -1299,8 +1316,8 @@ export function DataTable<TData, TValue>({
                 </td>
               </tr>
             ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row, idx) => {
-                const rowId = getRowId(row.original, idx);
+              table.getRowModel().rows.map((row) => {
+                const rowId = row.index;
                 const isSelected = !!selectedRowIds[rowId];
 
                 return (
@@ -1322,6 +1339,8 @@ export function DataTable<TData, TValue>({
                     >
                       <button
                         type="button"
+                        aria-label={`Select row ${rowId + 1}`}
+                        aria-pressed={isSelected}
                         className="p-1 rounded text-slate-400 hover:text-indigo-600 transition-colors"
                       >
                         {isSelected ? (
@@ -1472,26 +1491,34 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Floating Batch Action Bar */}
-      {selectedCount > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-2xl shadow-2xl px-5 py-3 flex items-center gap-4 border border-slate-800 animate-in fade-in slide-in-from-bottom-4 duration-200">
+      {selectedCount > 0 && !isLoading && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-3 py-3 text-white shadow-2xl sm:px-5">
           <div className="flex items-center gap-2 pr-2 border-r border-slate-700">
             <span className="h-2 w-2 rounded-full bg-indigo-400 animate-pulse" />
             <span className="text-xs font-bold">{selectedCount} Selected</span>
           </div>
 
           <div className="flex items-center gap-2">
+            {exportError?.scope === 'selected' && (
+              <span role="alert" className="max-w-40 text-xs text-rose-200">{exportError.message}</span>
+            )}
             <button
-              onClick={handleExportSelected}
+              onClick={() => void handleExport('excel', 'selected')}
+              disabled={exportingScope !== null || !visibleHeaders.length}
+              title={visibleHeaders.length ? 'Download checked records as Excel' : 'Show at least one table column to export'}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
             >
-              <Download className="h-3.5 w-3.5" /> Export Selected
+              {exportingScope === 'selected' ? 'Preparing…' : 'Export Selected'}
             </button>
 
             <button
-              onClick={handlePrintSelected}
+              type="button"
+              onClick={() => openPrint('print', selectedRows as ExportRow[])}
+              disabled={exportingScope !== null || !dataHeaders.length}
+              title="Preview the checked rows for printing"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
             >
-              <Printer className="h-3.5 w-3.5" /> Print
+              Print
             </button>
 
             <button
